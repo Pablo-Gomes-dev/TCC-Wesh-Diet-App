@@ -1,23 +1,22 @@
-// ==============================================================================
+// INSERI OS PROPIOS DADOS PARA FINS DE MOSTRAR FUTURAS EVOLUÇÕES
 // TELA DE DETALHES DO PACIENTE - WESHDIET
 // ==============================================================================
 // Esta tela permite cadastrar, visualizar e editar os dados cadastrais do paciente
 // (nome, idade, peso, altura, objetivos, restrições e observações), calculando
 // automaticamente o IMC e sua respectiva classificação nutricional.
-// ==============================================================================
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 // ------------------------------------------------------------------------------
@@ -97,7 +96,10 @@ export default function DetalhesDoPacienteScreen() {
   // FUNÇÃO PARA PERSISTIR OS DADOS DO PACIENTE NO ASYNCSTORAGE
   const salvarPaciente = async () => {
     if (!nome.trim() || !idade.trim() || !peso.trim() || !altura.trim()) {
-      Alert.alert("Campos obrigatórios", "Por favor, preencha nome, idade, peso e altura.");
+      Alert.alert(
+        "Campos obrigatórios",
+        "Por favor, preencha nome, idade, peso e altura.",
+      );
       return;
     }
 
@@ -174,7 +176,9 @@ export default function DetalhesDoPacienteScreen() {
         <View style={styles.imcContainer}>
           <Text style={styles.imcTitulo}>IMC</Text>
           <Text style={styles.imcValor}>{valorIMC.toFixed(2)}</Text>
-          <Text style={styles.imcClassificacao}>{obterClassificacaoIMC(valorIMC)}</Text>
+          <Text style={styles.imcClassificacao}>
+            {obterClassificacaoIMC(valorIMC)}
+          </Text>
         </View>
       )}
 

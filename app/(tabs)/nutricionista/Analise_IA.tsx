@@ -1,21 +1,19 @@
-// ==============================================================================
 // TELA DE ANÁLISE COM INTELIGÊNCIA ARTIFICIAL - WESHDIET
-// ==============================================================================
+
 // Esta tela permite recuperar os dados do paciente salvos localmente (AsyncStorage)
 // e enviá-los ao backend FastAPI para geração de uma análise nutricional com IA.
-// ==============================================================================
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 // CONFIGURAÇÃO DA URL BASE DO BACKEND
@@ -23,7 +21,6 @@ import {
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.0.23:8000";
 
 // COMPONENTE PRINCIPAL DA TELA DE ANÁLISE COM IA
-// Nomeado em PascalCase ('AssistenteIAScreen') para respeitar as regras de hooks do React e linter
 export default function AssistenteIAScreen() {
   // ESTADO PARA ARMAZENAR E EXIBIR A RESPOSTA GERADA PELO BACKEND / IA
   const [resposta, setResposta] = useState("");
@@ -84,7 +81,7 @@ export default function AssistenteIAScreen() {
 
       Alert.alert(
         "Erro de Conexão",
-        "Não foi possível conectar ao backend Python. Verifique se o servidor está ativo."
+        "Não foi possível conectar ao backend Python. Verifique se o servidor está ativo.",
       );
     }
   }

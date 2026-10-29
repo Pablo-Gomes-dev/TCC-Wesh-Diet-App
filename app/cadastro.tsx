@@ -6,7 +6,7 @@
 // Salva o token de acesso e direciona imediatamente para a área apropriada.
 // ==============================================================================
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -25,6 +25,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.0.23:8000";
 
 export default function CadastroScreen() {
   const router = useRouter();
+  const { signIn } = useAuth();
 
   // ESTADOS DOS CAMPOS DO FORMULÁRIO
   const [nome, setNome] = useState("");
@@ -83,16 +84,17 @@ export default function CadastroScreen() {
       }
 
       // PERSISTÊNCIA DA SESSÃO LOCAL (TOKEN E PERFIL DO USUÁRIO)
-      await AsyncStorage.setItem("@weshdiet:token", dados.token);
-      await AsyncStorage.setItem("@weshdiet:usuario", JSON.stringify(dados.usuario));
+      await signIn(dados.token, dados.usuario);
 
       Alert.alert("Bem-vindo!", dados.mensagem);
 
       // DIRECIONAMENTO CONFORME O PAPEL ESCOLHIDO
       if (dados.usuario.tipo_usuario === "paciente") {
-        router.replace("/home");
+        router.replace("/(paciente)/dashboard");
+      } else if (dados.usuario.tipo_usuario === "nutricionista") {
+        router.replace("/(nutricionista)/dashboard");
       } else {
-        router.replace("/(tabs)/Pacientes");
+        router.replace("/login");
       }
     } catch (erro) {
       console.error("Erro no cadastro:", erro);

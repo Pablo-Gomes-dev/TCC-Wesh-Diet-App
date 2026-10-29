@@ -14,6 +14,7 @@ from typing import Optional, List
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 # DIRETÓRIO PRIVADO PARA ARMAZENAMENTO DOS PDFs DOS EXAMES
@@ -636,9 +637,8 @@ async def analisar_exame(
     }
 
 
-# ==============================================================================
+
 # ROTA: LISTAGEM DOS EXAMES DO USUÁRIO AUTENTICADO
-# ==============================================================================
 
 @app.get("/exames/meus")
 def listar_meus_exames(usuario: dict = Depends(obter_usuario_atual)):
@@ -670,7 +670,13 @@ def listar_meus_exames(usuario: dict = Depends(obter_usuario_atual)):
                         e.data_envio,
                         e.status_processamento,
                         e.paciente_id,
-                        u.nome AS nome_paciente
+                        u.nome AS nome_paciente,
+                        EXISTS(
+                            SELECT 1
+                            FROM relatorios_exames r
+                            WHERE r.exame_id = e.id
+                            AND r.status = 'finalizado'
+                        ) AS tem_relatorio
                     FROM exames e
                     JOIN pacientes p ON e.paciente_id = p.id
                     JOIN usuarios u ON p.usuario_id = u.id
@@ -690,7 +696,13 @@ def listar_meus_exames(usuario: dict = Depends(obter_usuario_atual)):
                         e.data_envio,
                         e.status_processamento,
                         e.paciente_id,
-                        u.nome AS nome_paciente
+                        u.nome AS nome_paciente,
+                        EXISTS(
+                            SELECT 1
+                            FROM relatorios_exames r
+                            WHERE r.exame_id = e.id
+                            AND r.status = 'finalizado'
+                        ) AS tem_relatorio
                     FROM exames e
                     JOIN vinculos_nutricionistas v ON e.paciente_id = v.paciente_id
                     JOIN pacientes p ON e.paciente_id = p.id
@@ -712,14 +724,232 @@ def listar_meus_exames(usuario: dict = Depends(obter_usuario_atual)):
     # FORMATAÇÃO DA RESPOSTA — sem expor referencia_arquivo nem caminhos internos
     exames = []
     for registro in registros:
-        exame_id, nome_arquivo, data_envio, status_proc, paciente_id, nome_paciente = registro
+        (
+            exame_id,
+            nome_arquivo,
+            data_envio,
+            status_proc,
+            paciente_id,
+            nome_paciente,
+            tem_relatorio,
+        ) = registro
         exames.append({
             "id": exame_id,
             "nome_arquivo": nome_arquivo or "exame.pdf",
             "data_envio": data_envio.strftime("%d/%m/%Y") if data_envio else None,
             "status_processamento": status_proc,
             "paciente_id": paciente_id,
-            "nome_paciente": nome_paciente,
+            "nome_paciente":nome_paciente,
+            "tem_relatorio": tem_relatorio,
         })
 
     return {"exames": exames}
+
+@app.get("/exames/{exame_id}/pdf")
+def visualizar_pdf_exame(
+    exame_id: int,
+    usuario: dict = Depends(obter_usuario_atual)
+):
+    """
+    Retorna o PDF original de um exame após validar as permissões.
+
+    - Pacientes podem visualizar somente os próprios exames.
+    - Nutricionistas precisam ter vínculo ativo com o paciente.
+    - O caminho privado do arquivo não é exposto ao frontend.
+    """
+
+    id_usuario = usuario["id"]
+    tipo_usuario = usuario["tipo_usuario"]
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    e.referencia_arquivo,
+                    e.nome_arquivo,
+                    e.paciente_id,
+                    p.usuario_id
+                FROM exames e
+                JOIN pacientes p ON e.paciente_id = p.id
+                WHERE e.id = %s
+                """,
+                (exame_id,)
+            )
+
+            exame = cur.fetchone()
+
+    if not exame:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exame não encontrado."
+        )
+
+    referencia_arquivo, nome_arquivo, paciente_id, paciente_usuario_id = exame
+
+    if tipo_usuario == "paciente":
+        if id_usuario != paciente_usuario_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Você não tem permissão para visualizar este exame."
+            )
+
+    elif tipo_usuario == "nutricionista":
+        tem_vinculo = verificar_vinculo_nutricionista_paciente(
+            id_usuario,
+            paciente_id
+        )
+
+        if not tem_vinculo:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Você não possui vínculo ativo com este paciente."
+            )
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tipo de usuário sem permissão para visualizar exames."
+        )
+
+    if not referencia_arquivo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="O arquivo deste exame não possui referência armazenada."
+        )
+
+    caminho_arquivo = STORAGE_DIR / referencia_arquivo
+
+    # Impede que uma referência manipulada acesse arquivos fora da pasta privada.
+    try:
+        caminho_arquivo.resolve().relative_to(STORAGE_DIR.resolve())
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Referência de arquivo inválida."
+        )
+
+    if not caminho_arquivo.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="O arquivo PDF não foi encontrado no armazenamento."
+        )
+
+    return FileResponse(
+        path=caminho_arquivo,
+        media_type="application/pdf",
+        filename=nome_arquivo or "exame.pdf",
+        content_disposition_type="inline"
+    )
+
+@app.get("/exames/{exame_id}/relatorio")
+def visualizar_relatorio_exame(
+    exame_id: int,
+    usuario: dict = Depends(obter_usuario_atual)
+):
+    """
+    Retorna o relatório finalizado mais recente de um exame.
+
+    - Pacientes podem consultar apenas os próprios exames.
+    - Nutricionistas precisam ter vínculo ativo com o paciente.
+    - Somente relatórios finalizados são disponibilizados.
+    """
+
+    id_usuario = usuario["id"]
+    tipo_usuario = usuario["tipo_usuario"]
+
+    # 1. Localiza o exame e identifica seu paciente.
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    e.id,
+                    e.paciente_id,
+                    p.usuario_id
+                FROM exames e
+                JOIN pacientes p ON e.paciente_id = p.id
+                WHERE e.id = %s
+                """,
+                (exame_id,)
+            )
+
+            exame = cur.fetchone()
+
+    if not exame:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exame não encontrado."
+        )
+
+    _, paciente_id, paciente_usuario_id = exame
+
+    # 2. Valida as permissões do usuário.
+    if tipo_usuario == "paciente":
+        if id_usuario != paciente_usuario_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Você não tem permissão para visualizar este relatório."
+            )
+
+    elif tipo_usuario == "nutricionista":
+        tem_vinculo = verificar_vinculo_nutricionista_paciente(
+            id_usuario,
+            paciente_id
+        )
+
+        if not tem_vinculo:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Você não possui vínculo ativo com este paciente."
+            )
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tipo de usuário sem permissão para consultar relatórios."
+        )
+
+    # 3. Busca o relatório finalizado mais recente.
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    conteudo_relatorio,
+                    data_geracao,
+                    relatorio_anterior_id
+                FROM relatorios_exames
+                WHERE exame_id = %s
+                  AND status = 'finalizado'
+                ORDER BY data_geracao DESC NULLS LAST, id DESC
+                LIMIT 1
+                """,
+                (exame_id,)
+            )
+
+            relatorio = cur.fetchone()
+
+    if not relatorio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Não existe relatório finalizado para este exame."
+        )
+
+    (
+        relatorio_id,
+        conteudo_relatorio,
+        data_geracao,
+        relatorio_anterior_id
+    ) = relatorio
+
+    return {
+        "id": relatorio_id,
+        "exame_id": exame_id,
+        "conteudo_relatorio": conteudo_relatorio,
+        "data_geracao": (
+            data_geracao.isoformat() if data_geracao else None
+        ),
+        "relatorio_anterior_id": relatorio_anterior_id
+    }

@@ -1,11 +1,13 @@
+// ARQUIVO DESTINADO A GERAR E A EDITAR O PLANO ALIMENTAR DO PACIENTE E LISTANDO AS OPCOES DE SUBSTIUIÇÃO DE ALIMENTOS.
+
 import { StyleSheet, Text, View } from "react-native";
 
-export default function acompanhamentoScreen() {
+export default function alimentacaoScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Acompanhamento</Text>
+      <Text style={styles.title}>Plano alimentar</Text>
 
-      <Text style={styles.subtitle}>Seu acompanhamento aparecerá aqui.</Text>
+      <Text style={styles.subtitle}>Seu plano alimentar aparecerá aqui.</Text>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Café da manhã</Text>

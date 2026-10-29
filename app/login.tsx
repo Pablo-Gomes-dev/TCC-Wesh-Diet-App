@@ -6,7 +6,7 @@
 // do banco de dados e direciona o usuário para sua respectiva área de trabalho.
 // ==============================================================================
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
@@ -24,43 +24,21 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.0.23:8000";
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { usuario, token, signIn, isLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [carregando, setCarregando] = useState(false);
 
-  // VERIFICA SE JÁ EXISTE UMA SESSÃO VÁLIDA SALVA NO DISPOSITIVO (PERSISTÊNCIA)
+  // SE JÁ HOUVER SESSÃO VÁLIDA RESTAURADA PELO CONTEXTO, DIRECIONA IMEDIATAMENTE
   useEffect(() => {
-    const verificarSessaoAtiva = async () => {
-      try {
-        const token = await AsyncStorage.getItem("@weshdiet:token");
-        const usuarioJson = await AsyncStorage.getItem("@weshdiet:usuario");
-
-        if (token && usuarioJson) {
-          // Valida a validade do token diretamente com o backend
-          const resposta = await fetch(`${API_BASE_URL}/auth/me`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-
-          if (resposta.ok) {
-            const dados = await resposta.json();
-            const tipo = dados.usuario.tipo_usuario;
-
-            // DIRECIONAMENTO AUTOMÁTICO SE A SESSÃO JÁ ESTIVER ATIVA
-            if (tipo === "paciente") {
-              router.replace("/home");
-            } else {
-              router.replace("/(tabs)/Pacientes");
-            }
-          }
-        }
-      } catch {
-        // Sessão expirada ou sem conexão; permanece na tela de login
+    if (!isLoading && token && usuario) {
+      if (usuario.tipo_usuario === "paciente") {
+        router.replace("/(paciente)/dashboard");
+      } else if (usuario.tipo_usuario === "nutricionista") {
+        router.replace("/(nutricionista)/dashboard");
       }
-    };
-
-    verificarSessaoAtiva();
-  }, [router]);
-
+    }
+  }, [isLoading, token, usuario, router]);
 
   // FUNÇÃO DE LOGIN COM E-MAIL E SENHA
   const handleLogin = async () => {
@@ -91,15 +69,16 @@ export default function LoginScreen() {
         throw new Error(dados.detail || "Falha ao realizar login.");
       }
 
-      // PERSISTE O TOKEN E O USUÁRIO NO ARMAZENAMENTO LOCAL SEGURO
-      await AsyncStorage.setItem("@weshdiet:token", dados.token);
-      await AsyncStorage.setItem("@weshdiet:usuario", JSON.stringify(dados.usuario));
+      // ATUALIZA A SESSÃO NO CONTEXTO E PERSISTE O TOKEN
+      await signIn(dados.token, dados.usuario);
 
-      // DIRECIONAMENTO BASEADO NO PAPEL RECUPERADO DO BANCO DE DADOS
+      // DIRECIONAMENTO CONFORME O PAPEL
       if (dados.usuario.tipo_usuario === "paciente") {
-        router.replace("/home");
+        router.replace("/(paciente)/dashboard");
+      } else if (dados.usuario.tipo_usuario === "nutricionista") {
+        router.replace("/(nutricionista)/dashboard");
       } else {
-        router.replace("/(tabs)/Pacientes");
+        router.replace("/login");
       }
     } catch (erro) {
       console.error("Erro no login:", erro);

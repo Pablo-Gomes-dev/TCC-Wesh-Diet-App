@@ -1,3 +1,5 @@
+// ARQUIVO DESTINADO A LISTAR AS EVOLUÇÕES DOS PACIENTES VINCULADOS A ELE.
+
 import { Text, View } from "react-native";
 
 export default function TesteScreen() {

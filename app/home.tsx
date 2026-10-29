@@ -7,9 +7,9 @@
 // Possui também o botão de logout seguro que limpa a sessão local.
 // ==============================================================================
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   Alert,
   Pressable,
@@ -22,28 +22,7 @@ import {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [usuario, setUsuario] = useState<{
-    id: number;
-    nome: string;
-    email: string;
-    tipo_usuario: "paciente" | "nutricionista";
-    crn?: string;
-  } | null>(null);
-
-  // RECUPERA O USUÁRIO AUTENTICADO DO ARMAZENAMENTO LOCAL
-  useEffect(() => {
-    const carregarUsuario = async () => {
-      try {
-        const dadosArmazenados = await AsyncStorage.getItem("@weshdiet:usuario");
-        if (dadosArmazenados) {
-          setUsuario(JSON.parse(dadosArmazenados));
-        }
-      } catch (e) {
-        console.error("Erro ao carregar sessão local:", e);
-      }
-    };
-    carregarUsuario();
-  }, []);
+  const { usuario, signOut } = useAuth();
 
   // ENCERRAMENTO SEGURO DA SESSÃO (LOGOUT)
   const handleLogout = async () => {
@@ -53,8 +32,7 @@ export default function HomeScreen() {
         text: "Sair",
         style: "destructive",
         onPress: async () => {
-          await AsyncStorage.removeItem("@weshdiet:token");
-          await AsyncStorage.removeItem("@weshdiet:usuario");
+          await signOut();
           router.replace("/login");
         },
       },
@@ -107,7 +85,7 @@ export default function HomeScreen() {
 
           <Pressable
             style={styles.cardAcao}
-            onPress={() => router.push("/(tabs)/Pacientes")}
+            onPress={() => router.push("/(nutricionista)/pacientes")}
           >
             <Text style={styles.iconeAcao}>👥</Text>
             <View style={styles.infoAcao}>
@@ -128,7 +106,7 @@ export default function HomeScreen() {
           {/* CARD: ENVIAR EXAMES */}
           <Pressable
             style={styles.cardAcao}
-            onPress={() => router.push("/(tabs)/Pacientes/Exames")}
+            onPress={() => router.push("/(paciente)/exames")}
           >
             <Text style={styles.iconeAcao}>📄</Text>
             <View style={styles.infoAcao}>
@@ -139,10 +117,10 @@ export default function HomeScreen() {
             </View>
           </Pressable>
 
-          {/* CARD: DETALHES DO PACIENTE */}
+          {/* CARD: DETALHES DO PACIENTE (PERFIL) */}
           <Pressable
             style={styles.cardAcao}
-            onPress={() => router.push("/(tabs)/Pacientes/Detalhes_do_paciente")}
+            onPress={() => router.push("/(paciente)/perfil")}
           >
             <Text style={styles.iconeAcao}>⚖️</Text>
             <View style={styles.infoAcao}>
@@ -156,7 +134,7 @@ export default function HomeScreen() {
           {/* CARD: ASSISTENTE DE IA */}
           <Pressable
             style={styles.cardAcao}
-            onPress={() => router.push("/(tabs)/Pacientes/Analise_IA")}
+            onPress={() => router.push("/(paciente)/analise-ia")}
           >
             <Text style={styles.iconeAcao}>🤖</Text>
             <View style={styles.infoAcao}>

@@ -5,12 +5,12 @@ import * as IntentLauncher from "expo-intent-launcher";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 // CONFIGURAÇÃO DA URL BASE DA API DO BACKEND
@@ -31,14 +31,60 @@ export default function Exames() {
     status_processamento: string;
     paciente_id: number;
     nome_paciente: string | null;
+    tem_relatorio: boolean;
   };
 
   const [exames, setExames] = useState<Exame[]>([]);
   const [carregandoExames, setCarregandoExames] = useState(true);
   const [erroExames, setErroExames] = useState("");
 
-  function visualizarExame(nome: string) {
-    Alert.alert("Visualizar exame", `Exame selecionado:\n${nome}`);
+  async function visualizarExame(exameId: number) {
+    try {
+      const token = await AsyncStorage.getItem("@weshdiet:token");
+
+      if (!token) {
+        Alert.alert(
+          "Sessão expirada",
+          "Faça login novamente para visualizar o exame.",
+        );
+        return;
+      }
+
+      const caminhoLocal = `${FileSystem.cacheDirectory}exame_${exameId}.pdf`;
+
+      const resultado = await FileSystem.downloadAsync(
+        `${API_BASE_URL}/exames/${exameId}/pdf`,
+        caminhoLocal,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (resultado.status !== 200) {
+        Alert.alert(
+          "Erro ao visualizar",
+          `O servidor retornou o erro HTTP ${resultado.status}.`,
+        );
+        return;
+      }
+
+      const contentUri = await FileSystem.getContentUriAsync(resultado.uri);
+
+      await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
+        data: contentUri,
+        type: "application/pdf",
+        flags: 1,
+      });
+    } catch (erro) {
+      console.error("Erro ao visualizar exame:", erro);
+
+      Alert.alert(
+        "Erro ao abrir PDF",
+        "Não foi possível abrir o documento. Verifique a conexão e se há um visualizador de PDF disponível.",
+      );
+    }
   }
 
   async function carregarExames() {
@@ -98,6 +144,16 @@ export default function Exames() {
     }
 
     try {
+      const token = await AsyncStorage.getItem("@weshdiet:token");
+
+      if (!token) {
+        Alert.alert(
+          "Sessão expirada",
+          "Faça seu login novamente antes de enviar o exame.",
+        );
+        return;
+      }
+
       console.log("Iniciando envio do PDF...");
       console.log("Arquivo:", exameSelecionado.nome);
       console.log("URI:", exameSelecionado.uri);
@@ -110,6 +166,9 @@ export default function Exames() {
           httpMethod: "POST",
           uploadType: FileSystem.FileSystemUploadType.MULTIPART,
           mimeType: "application/pdf",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         },
       );
 
@@ -207,25 +266,13 @@ export default function Exames() {
 
       <Text style={styles.subtitulo}>Exames disponiveis para o paciente</Text>
 
+      {/* ESTADOS DE CARREGAMENTO E ERRO */}
       {carregandoExames ? (
         <Text style={styles.info}>Carregando exames...</Text>
       ) : erroExames ? (
-        <View style={styles.card}>
-          <Text style={styles.info}>{erroExames}</Text>
-
-          <TouchableOpacity
-            style={styles.botaoAnalise}
-            onPress={carregarExames}
-          >
-            <Text style={styles.textoBotao}>Tentar novamente</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.info}>{erroExames}</Text>
       ) : exames.length === 0 ? (
-        <View style={styles.card}>
-          <Text style={styles.info}>
-            Nenhum exame disponível para exibição.
-          </Text>
-        </View>
+        <Text style={styles.info}>Nenhum exame foi encontrado.</Text>
       ) : (
         exames.map((exame) => (
           <View key={exame.id} style={styles.card}>
@@ -242,9 +289,9 @@ export default function Exames() {
             <View style={styles.botoes}>
               <TouchableOpacity
                 style={styles.botaoAnalise}
-                onPress={() => visualizarExame(exame.nome_arquivo)}
+                onPress={() => visualizarExame(exame.id)}
               >
-                <Text style={styles.textoBotao}>Enviar para análise</Text>
+                <Text style={styles.textoBotao}>Visualizar PDF</Text>
               </TouchableOpacity>
             </View>
           </View>

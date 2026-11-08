@@ -1,10 +1,10 @@
 // ==============================================================================
-// TELA DE DETALHES DO PACIENTE - WESHDIET
+// TELA DE DETALHES DO PACIENTE - WISHDIET
 // ==============================================================================
 // Esta tela permite cadastrar, visualizar e editar os dados cadastrais do paciente
 // (nome, idade, peso, altura, objetivos, restrições e observações), calculando
 // automaticamente o IMC e sua respectiva classificação nutricional.
-// ==============================================================================
+// ====================================================================
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";

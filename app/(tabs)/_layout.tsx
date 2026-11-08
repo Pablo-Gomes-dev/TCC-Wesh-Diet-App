@@ -1,5 +1,5 @@
 // ==============================================================================
-// LAYOUT DAS ABAS INFERIORES (BOTTOM TABS) - WESHDIET
+// LAYOUT DAS ABAS INFERIORES (BOTTOM TABS) - WISHDIET
 // ==============================================================================
 // Este arquivo configura a barra de navegação por abas inferiores do aplicativo,
 // definindo ícones, títulos e rotas ativas (Home e Pacientes).

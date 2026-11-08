@@ -1,5 +1,5 @@
 // ==============================================================================
-// TELA DE MENSAGENS (COMUNICAÇÃO NUTRICIONISTA & PACIENTE) - WESHDIET
+// TELA DE MENSAGENS (COMUNICAÇÃO NUTRICIONISTA & PACIENTE) - WISHDIET
 // ==============================================================================
 import { useRouter } from "expo-router";
 import React from "react";

@@ -1,5 +1,5 @@
 // ==============================================================================
-// LAYOUT RAIZ DE NAVEGAÇÃO (STACK) - WESHDIET
+// LAYOUT RAIZ DE NAVEGAÇÃO (STACK) - WISHDIET
 // ==============================================================================
 // Configura o AuthProvider, controle centralizado de acesso por perfil,
 // tema visual (claro/escuro) e status bar do aplicativo.
@@ -8,9 +8,9 @@
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
-  DarkTheme,
-  DefaultTheme,
-  ThemeProvider,
+    DarkTheme,
+    DefaultTheme,
+    ThemeProvider,
 } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -28,7 +28,10 @@ function RootNavigation() {
     if (isLoading) return;
 
     const grupoAtual = segments[0] as string | undefined;
-    const estaNasTelasAuth = grupoAtual === "login" || grupoAtual === "cadastro";
+    const estaNasTelasAuth =
+      grupoAtual === "login" ||
+      grupoAtual === "cadastro" ||
+      grupoAtual === "escolher-papel";
 
     // 1. USUÁRIO NÃO AUTENTICADO TENTANDO ACESSAR ÁREAS PRIVADAS
     if (!token || !usuario) {
@@ -41,7 +44,11 @@ function RootNavigation() {
     // 2. PACIENTE AUTENTICADO
     if (usuario.tipo_usuario === "paciente") {
       // Bloqueia acesso à área do nutricionista ou retorno ao login/cadastro
-      if (estaNasTelasAuth || grupoAtual === "(nutricionista)" || grupoAtual === "(tabs)") {
+      if (
+        estaNasTelasAuth ||
+        grupoAtual === "(nutricionista)" ||
+        grupoAtual === "(tabs)"
+      ) {
         router.replace("/(paciente)/dashboard");
       }
       return;
@@ -50,7 +57,11 @@ function RootNavigation() {
     // 3. NUTRICIONISTA AUTENTICADO
     if (usuario.tipo_usuario === "nutricionista") {
       // Bloqueia acesso à área do paciente ou retorno ao login/cadastro
-      if (estaNasTelasAuth || grupoAtual === "(paciente)" || grupoAtual === "(tabs)") {
+      if (
+        estaNasTelasAuth ||
+        grupoAtual === "(paciente)" ||
+        grupoAtual === "(tabs)"
+      ) {
         router.replace("/(nutricionista)/dashboard");
       }
       return;
@@ -78,8 +89,15 @@ function RootNavigation() {
       <Stack.Screen name="(nutricionista)" options={{ headerShown: false }} />
 
       {/* ROTAS PÚBLICAS DE AUTENTICAÇÃO */}
-      <Stack.Screen name="login" options={{ title: "Login", headerShown: false }} />
+      <Stack.Screen
+        name="login"
+        options={{ title: "login", headerShown: false }}
+      />
       <Stack.Screen name="cadastro" options={{ title: "Criar Conta" }} />
+      <Stack.Screen
+        name="escolher-papel"
+        options={{ title: "Escolher Perfil", headerShown: false }}
+      />
 
       {/* ROTAS COMPARTILHADAS / LEGADAS PRESERVADAS */}
       <Stack.Screen name="home" options={{ title: "Home" }} />

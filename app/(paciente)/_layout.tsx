@@ -1,5 +1,5 @@
 // ==============================================================================
-// LAYOUT DE ABAS DO PACIENTE - WESHDIET
+// LAYOUT DE ABAS DO PACIENTE - WISHDIET
 // ==============================================================================
 // Navegação por abas inferiores exclusiva para o perfil de paciente.
 // Exibe apenas as funcionalidades destinadas ao paciente.

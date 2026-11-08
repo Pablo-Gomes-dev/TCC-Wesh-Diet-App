@@ -1,5 +1,5 @@
 // ==============================================================================
-// DASHBOARD DO NUTRICIONISTA - WESHDIET
+// DASHBOARD DO NUTRICIONISTA - WISHDIET
 // ==============================================================================
 import { useRouter } from "expo-router";
 import {

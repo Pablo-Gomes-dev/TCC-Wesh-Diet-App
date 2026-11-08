@@ -1,5 +1,5 @@
 // ==============================================================================
-// TELA DE PAINEL INICIAL (HOME) - WESHDIET
+// TELA DE PAINEL INICIAL (HOME) - WISHDIET
 // ==============================================================================
 // Esta tela exibe a visão personalizada de acordo com o papel do usuário:
 // - Para Paciente: Acesso aos seus exames, plano alimentar e assistente de IA.
@@ -138,7 +138,7 @@ export default function HomeScreen() {
           >
             <Text style={styles.iconeAcao}>🤖</Text>
             <View style={styles.infoAcao}>
-              <Text style={styles.tituloAcao}>Assistente IA WeshDiet</Text>
+              <Text style={styles.tituloAcao}>Assistente IA WishDiet</Text>
               <Text style={styles.subtituloAcao}>
                 Tire dúvidas e visualize orientações nutricionais personalizadas.
               </Text>

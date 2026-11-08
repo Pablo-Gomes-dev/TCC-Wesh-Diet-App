@@ -9,7 +9,7 @@ export default function HomeScreen() {
   return (
     //PARAMETRO UTILIZADO PARA CRIAR A TELA INICIAL DO APLICATIVO, ONDE O USUÁRIO PODE INICIAR O PROCESSO DE LOGIN.
     <View style={styles.container}>
-      <Text style={styles.title}>Wesh Diet</Text>
+      <Text style={styles.title}>Wish Diet</Text>
       <Text style={styles.subtitle}>
         Seu acompanhamento nutricional inteligente
       </Text>

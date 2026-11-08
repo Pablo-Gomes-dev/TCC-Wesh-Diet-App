@@ -1,5 +1,5 @@
 // ==============================================================================
-// DASHBOARD DO PACIENTE - WESHDIET
+// DASHBOARD DO PACIENTE - WISHDIET
 // ==============================================================================
 import { useRouter } from "expo-router";
 import {

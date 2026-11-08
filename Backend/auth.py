@@ -1,5 +1,5 @@
 # ==============================================================================
-# MÓDULO DE AUTENTICAÇÃO, HASHING E AUTORIZAÇÃO DE PAPÉIS - WESHDIET
+# MÓDULO DE AUTENTICAÇÃO, HASHING E AUTORIZAÇÃO DE PAPÉIS - WISHDIET
 # ==============================================================================
 # Este módulo gerencia o ciclo de vida de autenticação dos usuários:
 # - Criptografia forte de senhas com bcrypt (salting automático)
@@ -16,11 +16,36 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from database import get_db_connection
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
+
+from dotenv import load_dotenv
+
+# Garante o carregamento das variáveis de ambiente caso auth.py seja importado diretamente
+load_dotenv()
 
 # CONFIGURAÇÕES DO TOKEN JWT
-JWT_SECRET = os.getenv("JWT_SECRET", "wesh_diet_secret_key_tcc_2026_super_segura")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRACAO_HORAS = int(os.getenv("JWT_EXPIRACAO_HORAS", "24"))
+JWT_SECRET_RAW = os.getenv("JWT_SECRET")
+if not JWT_SECRET_RAW or len(JWT_SECRET_RAW.strip()) < 32:
+    raise RuntimeError(
+        "CONFIGURAÇÃO INSEGURA: A variável de ambiente JWT_SECRET deve ser configurada "
+        "com no mínimo 32 caracteres seguros para garantir a integridade da aplicação."
+    )
+JWT_SECRET: str = JWT_SECRET_RAW.strip()
+
+# O algoritmo utilizado pela aplicação é fixo e restrito a HS256
+JWT_ALGORITHM: str = "HS256"
+
+try:
+    JWT_EXPIRACAO_HORAS = int(os.getenv("JWT_EXPIRACAO_HORAS", "24"))
+    if JWT_EXPIRACAO_HORAS <= 0:
+        raise ValueError()
+except ValueError:
+    raise RuntimeError(
+        "CONFIGURAÇÃO INVÁLIDA: A variável JWT_EXPIRACAO_HORAS deve ser um número inteiro positivo."
+    )
+
+GOOGLE_CLIENT_IDS = [c.strip() for c in os.getenv("GOOGLE_CLIENT_IDS", "").split(",") if c.strip()]
 
 # ESQUEMA DE SEGURANÇA HTTP BEARER PARA ENDPOINTS PROTEGIDOS
 security = HTTPBearer(auto_error=False)
@@ -62,7 +87,7 @@ def verificar_senha(senha_plana: str, hash_armazenado: Optional[str]) -> bool:
 
 def criar_token_acesso(usuario_id: int, email: str, tipo_usuario: str) -> str:
     """
-    Gera o token JWT próprio da aplicação WeshDiet contendo a identidade e o papel do usuário.
+    Gera o token JWT próprio da aplicação WishDiet contendo a identidade e o papel do usuário.
     """
     expiracao = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRACAO_HORAS)
     payload = {
@@ -78,10 +103,16 @@ def criar_token_acesso(usuario_id: int, email: str, tipo_usuario: str) -> str:
 def decodificar_token_acesso(token: str) -> Dict[str, Any]:
     """
     Decodifica e valida a assinatura e data de expiração do token JWT.
+    Exige obrigatoriamente os claims 'exp' e 'sub'.
+    Valida se 'sub' representa um identificador numérico positivo.
     """
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return payload
+        payload = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM],
+            options={"require": ["exp", "sub"]}
+        )
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -93,45 +124,96 @@ def decodificar_token_acesso(token: str) -> Dict[str, Any]:
             detail="Token de autenticação inválido."
         )
 
+    sub = payload.get("sub")
+    if sub is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token de autenticação inválido: identificador ausente."
+        )
+
+    try:
+        sub_str = str(sub).strip()
+        # Verifica se é estritamente numérico e positivo
+        if not sub_str.isdigit() or int(sub_str) <= 0:
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token de autenticação inválido: identificador de usuário inválido."
+        )
+
+    return payload
+
 
 # ------------------------------------------------------------------------------
-# 3. VALIDAÇÃO DE IDENTIDADE DO GOOGLE (OPCIONAL)
+# 3. VALIDAÇÃO DE IDENTIDADE DO GOOGLE 
 # ------------------------------------------------------------------------------
 
 def validar_credencial_google(id_token: str) -> Dict[str, Any]:
     """
-    Valida o token JWT emitido pelo Google.
-    Em produção, valida a assinatura com as chaves públicas oficiais do Google (Google API).
-    Em ambiente de teste/desenvolvimento local, valida a estrutura e extrai os campos de identidade.
+    Valida o Google ID Token contra as chaves públicas oficiais do Google via google-auth.
+    Exige obrigatoriamente GOOGLE_CLIENT_IDS configurado no ambiente.
+    Verifica criptograficamente:
+    - Assinatura criptográfica
+    - Expiração
+    - Emissor oficial ('accounts.google.com' ou 'https://accounts.google.com')
+    - Audiência (deve pertencer aos Client IDs autorizados no backend)
+    - Identificador Google ('sub')
+    - E-mail e status email_verified == True
     """
-    if not id_token or id_token.strip() == "":
+    if not id_token or not id_token.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token do Google ausente ou inválido."
         )
 
+    if not GOOGLE_CLIENT_IDS:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Autenticação com Google não configurada no servidor (GOOGLE_CLIENT_IDS ausente)."
+        )
+
     try:
-        # Decodifica os claims sem verificação de assinatura para obter o cabeçalho/payload em dev
-        # (Quando configurado CLIENT_ID no .env, realiza a validação criptográfica completa)
-        dados = jwt.decode(id_token, options={"verify_signature": False})
-        
+        request_adapter = google_requests.Request()
+        dados = google_id_token.verify_oauth2_token(
+            id_token.strip(),
+            request_adapter,
+            audience=None
+        )
+
+        aud = dados.get("aud")
+        if not aud or aud not in GOOGLE_CLIENT_IDS:
+            raise ValueError("Token emitido para uma audiência não autorizada.")
+
+        iss = dados.get("iss")
+        if iss not in ("accounts.google.com", "https://accounts.google.com"):
+            raise ValueError("Emissor do token inválido.")
+
+        google_sub = dados.get("sub")
+        if not google_sub or not str(google_sub).strip():
+            raise ValueError("Identificador Google (sub) ausente.")
+
         email = dados.get("email")
-        google_id = dados.get("sub")
-        nome = dados.get("name", email.split("@")[0] if email else "Usuário Google")
+        if not email or "@" not in email:
+            raise ValueError("E-mail ausente ou inválido no token Google.")
 
-        if not email or not google_id:
-            raise ValueError("Token do Google não contém email ou identificador do usuário (sub).")
+        email_verified = dados.get("email_verified")
+        if email_verified is not True:
+            raise ValueError("E-mail não verificado na conta Google.")
 
-        return {
-            "google_id": str(google_id),
-            "email": str(email).lower(),
-            "nome": str(nome)
-        }
-    except Exception as erro:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Não foi possível validar a credencial do Google: {str(erro)}"
+            detail="Não foi possível validar a credencial do Google. Token inválido, expirado ou não autorizado."
         )
+
+    email_normalizado = email.strip().lower()
+
+    return {
+        "google_id": str(google_sub).strip(),
+        "email": email_normalizado,
+        "nome": (dados.get("name") or email_normalizado.split("@")[0]).strip(),
+    }
 
 
 # ------------------------------------------------------------------------------
@@ -152,12 +234,12 @@ async def obter_usuario_atual(
         )
 
     payload = decodificar_token_acesso(credenciais.credentials)
-    usuario_id = int(payload.get("sub", 0))
+    usuario_id = int(payload["sub"])
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, nome, email, tipo_usuario, ativo, status_aprovacao, crn
+                SELECT id, nome, email, tipo_usuario, ativo, status_aprovacao, crn, codigo_vinculo
                 FROM usuarios
                 WHERE id = %s;
             """, (usuario_id,))
@@ -176,7 +258,8 @@ async def obter_usuario_atual(
                 "tipo_usuario": resultado[3],
                 "ativo": resultado[4],
                 "status_aprovacao": resultado[5],
-                "crn": resultado[6]
+                "crn": resultado[6],
+                "codigo_vinculo": resultado[7] if len(resultado) > 7 else None
             }
 
             if not usuario["ativo"]:
@@ -198,6 +281,8 @@ async def exigir_paciente(usuario: Dict[str, Any] = Depends(obter_usuario_atual)
             detail="Acesso negado: Este recurso é restrito exclusivamente a pacientes."
         )
     return usuario
+
+
 
 
 async def exigir_nutricionista(usuario: Dict[str, Any] = Depends(obter_usuario_atual)) -> Dict[str, Any]:

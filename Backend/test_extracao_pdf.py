@@ -1,5 +1,5 @@
 # ==============================================================================
-# TESTES UNITÁRIOS DE EXTRAÇÃO DE TEXTO DE PDFS - WESHDIET
+# TESTES UNITÁRIOS DE EXTRAÇÃO DE TEXTO DE PDFS - WISHDIET
 # ==============================================================================
 # Estes testes validam o comportamento do módulo 'extrator_pdf.py' em múltiplos
 # cenários: documentos com texto selecionável, páginas em branco/digitalizadas,

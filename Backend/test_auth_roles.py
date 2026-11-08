@@ -1,5 +1,5 @@
 # ==============================================================================
-# TESTES DE CADASTRO, AUTENTICAÇÃO E CONTROLE DE ACESSO POR PAPÉIS - WESHDIET
+# TESTES DE CADASTRO, AUTENTICAÇÃO E CONTROLE DE ACESSO POR PAPÉIS - WISHDIET
 # ==============================================================================
 # Esta suíte valida:
 # 1. Cadastro e login de Pacientes e Nutricionistas.
@@ -65,7 +65,13 @@ def test_cadastro_nutricionista_com_crn():
     corpo = resposta.json()
     assert corpo["sucesso"] is True
     assert corpo["usuario"]["tipo_usuario"] == "nutricionista"
-    assert corpo["usuario"]["status_aprovacao"] == "aprovado"
+    # Conforme as regras de segurança, novos nutricionistas iniciam com status 'pendente'
+    assert corpo["usuario"]["status_aprovacao"] == "pendente"
+
+    # Atualiza o status para 'aprovado' para permitir a execução dos demais testes de rotas profissionais
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE usuarios SET status_aprovacao = 'aprovado' WHERE email = %s;", (EMAIL_NUTRI_1,))
 
 
 def test_cadastro_papel_invalido_rejeitado():
@@ -113,42 +119,46 @@ def test_login_senha_incorreta_rejeitado():
 # 3. TESTE DE AUTENTICAÇÃO COM GOOGLE (OPCIONAL E SEM SOBREPOSIÇÃO)
 # ------------------------------------------------------------------------------
 
+from unittest.mock import patch
+
 def test_login_google_novo_usuario_e_bloqueio_de_sobrescrita():
-    # Cria token sintético simulando Google OAuth ID Token
     google_id = f"google_id_{TIMESTAMP}"
     email_google = f"google_user_{TIMESTAMP}@gmail.com"
-    token_google_sintetico = jwt.encode(
-        {"sub": google_id, "email": email_google, "name": "Usuario Google Teste"},
-        "segredo_qualquer",
-        algorithm="HS256"
-    )
 
-    # 1. Primeira entrada com Google: deve exigir o papel
-    dados_sem_papel = {"id_token": token_google_sintetico}
-    resp1 = cliente.post("/auth/google", json=dados_sem_papel)
-    assert resp1.status_code == 400
-    assert "papel" in resp1.json()["detail"].lower()
+    # Mock da validação oficial do Google Identity Services para simular a resposta de um token válido
+    with patch("main.validar_credencial_google") as mock_valida:
+        mock_valida.return_value = {
+            "google_id": google_id,
+            "email": email_google,
+            "nome": "Usuario Google Teste"
+        }
 
-    # 2. Cadastro com Google informando papel 'paciente'
-    dados_com_papel = {
-        "id_token": token_google_sintetico,
-        "tipo_usuario": "paciente"
-    }
-    resp2 = cliente.post("/auth/google", json=dados_com_papel)
-    assert resp2.status_code == 200
-    corpo2 = resp2.json()
-    assert corpo2["usuario"]["tipo_usuario"] == "paciente"
+        # 1. Primeira entrada com Google: deve exigir o papel
+        dados_sem_papel = {"id_token": "token_google_mockado"}
+        resp1 = cliente.post("/auth/google", json=dados_sem_papel)
+        assert resp1.status_code == 400
+        assert "papel" in resp1.json()["detail"].lower()
 
-    # 3. Segunda entrada com Google tentando alterar o papel para 'nutricionista':
-    # O backend DEVE IGNORAR a tentativa de alteração e manter 'paciente'!
-    dados_tentativa_alteracao = {
-        "id_token": token_google_sintetico,
-        "tipo_usuario": "nutricionista"
-    }
-    resp3 = cliente.post("/auth/google", json=dados_tentativa_alteracao)
-    assert resp3.status_code == 200
-    corpo3 = resp3.json()
-    assert corpo3["usuario"]["tipo_usuario"] == "paciente"  # Papel preservado!
+        # 2. Cadastro com Google informando papel 'paciente'
+        dados_com_papel = {
+            "id_token": "token_google_mockado",
+            "tipo_usuario": "paciente"
+        }
+        resp2 = cliente.post("/auth/google", json=dados_com_papel)
+        assert resp2.status_code == 200
+        corpo2 = resp2.json()
+        assert corpo2["usuario"]["tipo_usuario"] == "paciente"
+
+        # 3. Segunda entrada com Google tentando alterar o papel para 'nutricionista':
+        # O backend DEVE IGNORAR a tentativa de alteração e manter 'paciente'!
+        dados_tentativa_alteracao = {
+            "id_token": "token_google_mockado",
+            "tipo_usuario": "nutricionista"
+        }
+        resp3 = cliente.post("/auth/google", json=dados_tentativa_alteracao)
+        assert resp3.status_code == 200
+        corpo3 = resp3.json()
+        assert corpo3["usuario"]["tipo_usuario"] == "paciente"  # Papel preservado!
 
 
 # ------------------------------------------------------------------------------
@@ -207,6 +217,11 @@ def test_protecao_dados_pacientes_e_vinculo():
         "tipo_usuario": "nutricionista",
         "crn": "CRN-3 99999/P"
     })
+
+    # Aprova o nutricionista para que a restrição testada seja especificamente a de vínculo clínico
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE usuarios SET status_aprovacao = 'aprovado' WHERE email = %s;", (EMAIL_NUTRI_SEM_VINCULO,))
 
     token_paciente_1 = cliente.post("/auth/login", json={"email": EMAIL_PACIENTE_1, "senha": SENHA_PADRAO}).json()["token"]
     token_nutri_sem_vinculo = cliente.post("/auth/login", json={"email": EMAIL_NUTRI_SEM_VINCULO, "senha": SENHA_PADRAO}).json()["token"]

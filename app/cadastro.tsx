@@ -1,5 +1,5 @@
 // ==============================================================================
-// TELA DE CADASTRO DE USUÁRIOS - WESHDIET
+// TELA DE CADASTRO DE USUÁRIOS - WISHDIET
 // ==============================================================================
 // Esta tela permite que novos usuários se cadastrem no sistema, escolhendo
 // obrigatoriamente o seu papel: 'Paciente' ou 'Nutricionista'.
@@ -118,7 +118,7 @@ export default function CadastroScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Criar Conta</Text>
-      <Text style={styles.subtitle}>Junte-se ao WeshDiet para acompanhamento nutricional inteligente</Text>
+      <Text style={styles.subtitle}>Junte-se ao WishDiet para acompanhamento nutricional inteligente</Text>
 
       {/* SELEÇÃO OBRIGATÓRIA DO PAPEL (PACIENTE OU NUTRICIONISTA) */}
       <Text style={styles.labelSecao}>Selecione o seu perfil:</Text>

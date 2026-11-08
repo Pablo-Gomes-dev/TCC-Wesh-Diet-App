@@ -1,22 +1,23 @@
 // ==============================================================================
-// TELA DE AUTENTICAÇÃO (LOGIN) - WESHDIET
+// TELA DE AUTENTICAÇÃO (LOGIN) - WISHDIET
 // ==============================================================================
 // Esta tela autentica o usuário no backend FastAPI com e-mail e senha ou Google.
 // Ao autenticar com sucesso, recupera o papel ('paciente' ou 'nutricionista')
 // do banco de dados e direciona o usuário para sua respectiva área de trabalho.
 // ==============================================================================
 
+import { obterIdTokenGoogle } from "@/app/services/googleAuth";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 // CONFIGURAÇÃO DA URL BASE DA API DO BACKEND
@@ -28,6 +29,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [carregandoGoogle, setCarregandoGoogle] = useState(false);
 
   // SE JÁ HOUVER SESSÃO VÁLIDA RESTAURADA PELO CONTEXTO, DIRECIONA IMEDIATAMENTE
   useEffect(() => {
@@ -84,7 +86,9 @@ export default function LoginScreen() {
       console.error("Erro no login:", erro);
       Alert.alert(
         "Erro de Autenticação",
-        erro instanceof Error ? erro.message : "Não foi possível conectar ao servidor."
+        erro instanceof Error
+          ? erro.message
+          : "Não foi possível conectar ao servidor.",
       );
     } finally {
       setCarregando(false);
@@ -92,16 +96,81 @@ export default function LoginScreen() {
   };
 
   // AUTENTICAÇÃO COM GOOGLE (OPCIONAL)
-  const handleGoogleLogin = () => {
-    Alert.alert(
-      "Entrar com Google",
-      "O login com Google está integrado como opção adicional. Em ambiente de homologação, utilize o formulário tradicional ou selecione as credenciais configuradas."
-    );
+  const handleGoogleLogin = async () => {
+    try {
+      setCarregandoGoogle(true);
+
+      //1. OBTEM O ID_TOKEN DO GOOGLE
+      const idToken = await obterIdTokenGoogle();
+
+      //2. ENVIA AO BACKEND
+      const resposta = await fetch(`${API_BASE_URL}/auth/google`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id_token: idToken }),
+      });
+
+      const dados = await resposta.json();
+
+      //3. CONTA NOVA: PRECISA ESCOLHER O PAPEL
+      const detalhe = dados?.detail;
+      if (
+        resposta.status === 400 &&
+        typeof detalhe === "object" &&
+        detalhe?.codigo === "PAPEL_OBRIGATORIO"
+      ) {
+        router.push({
+          pathname: "/escolher-papel",
+          params: { idToken },
+        });
+        return;
+      }
+
+      //4. OUTROS ERROS
+      if (!resposta.ok) {
+        const mensagem =
+          typeof detalhe === "string"
+            ? detalhe
+            : detalhe?.mensagem || "Falha ao autenticar com o Google.";
+        throw new Error(mensagem);
+      }
+
+      //5. SUCESSO: SALVA A SESSÃO E REDIRECIONA
+      await signIn(dados.token, dados.usuario);
+      redirecionarPorPapel(dados.usuario.tipo_usuario);
+    } catch (erro: any) {
+      // usuario fechou a janela do Google: não mostra erro
+      if (erro?.code === "SIGN_IN_CANCELLED" || erro?.code === "-5") {
+        return;
+      }
+      console.error("Erro no login com Google:", erro);
+      Alert.alert(
+        "Erro de Autentificação",
+        erro instanceof Error
+          ? erro.message
+          : "Não foi possivel entrar com o Google.",
+      );
+    } finally {
+      setCarregandoGoogle(false);
+    }
+  };
+
+  {
+    /* FUNÇÃO DEFINIDA PARA REDIRECIONAR O USUARIO DE ACORDO COM O PAPEL ESCOLHIDO.  */
+  }
+  const redirecionarPorPapel = (tipo: string) => {
+    if (tipo === "paciente") {
+      router.replace("/(paciente)/dashboard");
+    } else if (tipo === "nutricionista") {
+      router.replace("/(nutricionista)/dashboard");
+    } else {
+      router.replace("/login");
+    }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>WeshDiet</Text>
+      <Text style={styles.title}>WishDiet</Text>
       <Text style={styles.subtitle}>Entre na sua conta para continuar</Text>
 
       {/* FORMULÁRIO DE LOGIN */}
@@ -146,8 +215,16 @@ export default function LoginScreen() {
         </View>
 
         {/* BOTÃO GOOGLE */}
-        <TouchableOpacity style={styles.botaoGoogle} onPress={handleGoogleLogin}>
-          <Text style={styles.textoGoogle}>Entrar com Google</Text>
+        <TouchableOpacity
+          style={styles.botaoGoogle}
+          onPress={handleGoogleLogin}
+          disabled={carregandoGoogle || carregando}
+        >
+          {carregandoGoogle ? (
+            <ActivityIndicator color="#374151" />
+          ) : (
+            <Text style={styles.textoGoogle}> Entrar com Google</Text>
+          )}
         </TouchableOpacity>
 
         {/* LINK PARA CRIAR CONTA */}

@@ -1,4 +1,4 @@
-from funcoes_weshdiet import (
+from funcoes_wishdiet import (
     calcular_imc,
     classificar_imc,
     processar_dados_paciente,

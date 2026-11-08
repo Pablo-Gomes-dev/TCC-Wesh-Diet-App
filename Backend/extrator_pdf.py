@@ -1,5 +1,5 @@
 # ==============================================================================
-# MÓDULO DE EXTRAÇÃO DE TEXTO DE PDFS - WESHDIET
+# MÓDULO DE EXTRAÇÃO DE TEXTO DE PDFS - WISHDIET
 # ==============================================================================
 # Este módulo é responsável por processar o arquivo PDF recebido pelo backend,
 # validar suas dimensões e integridade, e extrair o texto de todas as páginas

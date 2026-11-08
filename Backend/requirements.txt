@@ -1,5 +1,5 @@
 # ==============================================================================
-# DEPENDÊNCIAS DO BACKEND WESHDIET (PYTHON)
+# DEPENDÊNCIAS DO BACKEND WISHDIET (PYTHON)
 # ==============================================================================
 # Para instalar todas as dependências no ambiente virtual, execute:
 # pip install -r requirements.txt
@@ -33,3 +33,7 @@ bcrypt>=4.2.0
 
 # EMISSÃO E VALIDAÇÃO DE TOKENS JWT PARA SESSÕES E AUTORIZAÇÃO DE PAPÉIS
 pyjwt>=2.9.0
+
+# AUTENTIFICAÇÃO OAuth 2.0  (CRIAÇÃO DE CONTA VIA EMAIL GOOGLE)
+google-auth>=2.30.0
+requests>=2.31.0

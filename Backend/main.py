@@ -1,7 +1,7 @@
 # ==============================================================================
-# BACKEND WESHDIET - API FASTAPI
+# BACKEND WISHDIET - API FASTAPI
 # ==============================================================================
-# Servidor principal da aplicação backend WeshDiet:
+# Servidor principal da aplicação backend WishDiet:
 # - Gerenciamento de rotas de autenticação (Cadastro, Login e Google OAuth)
 # - Controle de autorização baseado em papéis (Paciente vs Nutricionista)
 # - Análise de exames em PDF e assistência nutricional
@@ -9,9 +9,15 @@
 
 import os
 import uuid
+import secrets
 import pathlib
 from typing import Optional, List
 from dotenv import load_dotenv
+
+# CARREGAMENTO ANTECIPADO DAS VARIÁVEIS DE AMBIENTE (.env)
+# Deve ocorrer antes da importação de módulos que dependem das configurações de ambiente.
+load_dotenv()
+
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -37,12 +43,9 @@ from auth import (
     verificar_vinculo_nutricionista_paciente
 )
 
-# CARREGAMENTO DAS VARIÁVEIS DE AMBIENTE (.env)
-load_dotenv()
-
 # INICIALIZAÇÃO DA APLICAÇÃO FASTAPI
 app = FastAPI(
-    title="WeshDiet Backend API",
+    title="WishDiet Backend API",
     description="API para gestão nutricional, autenticação por papéis e análise de exames",
     version="1.1.0"
 )
@@ -78,6 +81,11 @@ class LoginRequest(BaseModel):
 class GoogleAuthRequest(BaseModel):
     id_token: str = Field(..., description="Token de identidade OpenID Connect do Google")
     tipo_usuario: Optional[str] = Field(None, description="Papel do usuário (obrigatório somente se for uma nova conta)")
+    crn: Optional[str] = Field(None, max_length=50, description="CRN (obrigatório para nutricionista)")
+
+
+class VincularPorCodigoRequest(BaseModel):
+    codigo: str = Field(..., min_length=4, max_length=20, description="Código de vínculo fornecido pelo nutricionista")
 
 
 # ==============================================================================
@@ -88,7 +96,7 @@ class GoogleAuthRequest(BaseModel):
 def inicio():
     return {
         "status": "online",
-        "mensagem": "Backend WeshDiet funcionando com PostgreSQL e FastAPI"
+        "mensagem": "Backend WishDiet funcionando com PostgreSQL e FastAPI"
     }
 
 
@@ -99,7 +107,7 @@ def inicio():
 @app.post("/auth/cadastro", status_code=status.HTTP_201_CREATED)
 def cadastrar_usuario(dados: CadastroUsuarioRequest):
     """
-    Cadastra um novo usuário no sistema WeshDiet.
+    Cadastra um novo usuário no sistema WishDiet.
     - Exige a escolha do papel ('paciente' ou 'nutricionista').
     - Valida o e-mail único.
     - Criptografa a senha com bcrypt.
@@ -116,11 +124,9 @@ def cadastrar_usuario(dados: CadastroUsuarioRequest):
 
     email_formatado = dados.email.strip().lower()
 
-    # Validação profissional para nutricionista
-    status_aprovacao = "aprovado"
-    if tipo_limpo == "nutricionista":
-        if not dados.crn or dados.crn.strip() == "":
-            status_aprovacao = "pendente"  # Requer validação profissional antes do acesso pleno
+    # Validação profissional para nutricionista:
+    # Novos nutricionistas permanecem com status 'pendente' até a validação profissional.
+    status_aprovacao = "aprovado" if tipo_limpo == "paciente" else "pendente"
 
     senha_criptografada = gerar_hash_senha(dados.senha)
 
@@ -134,25 +140,32 @@ def cadastrar_usuario(dados: CadastroUsuarioRequest):
                     detail="Este e-mail já está cadastrado. Por favor, faça login ou use outro e-mail."
                 )
 
-            # 2. Insere na tabela 'usuarios'
+            # 2. Gera código único de vínculo se for nutricionista
+            codigo_vinculo = None
+            if tipo_limpo == "nutricionista":
+                codigo_vinculo = f"NUTRI-{secrets.token_hex(3).upper()}"
+
+            # 3. Insere na tabela 'usuarios'
             cur.execute("""
                 INSERT INTO usuarios (
-                    nome, email, senha_hash, tipo_usuario, ativo, metodo_auth, crn, status_aprovacao
+                    nome, email, senha_hash, tipo_usuario, ativo, metodo_auth, crn, status_aprovacao, codigo_vinculo
                 )
-                VALUES (%s, %s, %s, %s, TRUE, 'local', %s, %s)
-                RETURNING id, nome, email, tipo_usuario, status_aprovacao;
+                VALUES (%s, %s, %s, %s, TRUE, 'local', %s, %s, %s)
+                RETURNING id, nome, email, tipo_usuario, status_aprovacao, codigo_vinculo;
             """, (
                 dados.nome.strip(),
                 email_formatado,
                 senha_criptografada,
                 tipo_limpo,
                 dados.crn.strip() if dados.crn else None,
-                status_aprovacao
+                status_aprovacao,
+                codigo_vinculo
             ))
             novo_usuario = cur.fetchone()
             usuario_id = novo_usuario[0]
+            codigo_gerado = novo_usuario[5]
 
-            # 3. Se for paciente, cria o registro correspondente na tabela 'pacientes'
+            # 4. Se for paciente, cria o registro correspondente na tabela 'pacientes'
             if tipo_limpo == "paciente":
                 cur.execute("""
                     INSERT INTO pacientes (usuario_id)
@@ -176,7 +189,8 @@ def cadastrar_usuario(dados: CadastroUsuarioRequest):
             "nome": novo_usuario[1],
             "email": novo_usuario[2],
             "tipo_usuario": novo_usuario[3],
-            "status_aprovacao": novo_usuario[4]
+            "status_aprovacao": novo_usuario[4],
+            "codigo_vinculo": codigo_gerado
         }
     }
 
@@ -195,7 +209,7 @@ def login_usuario(dados: LoginRequest):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, nome, email, senha_hash, tipo_usuario, ativo, status_aprovacao, metodo_auth
+                SELECT id, nome, email, senha_hash, tipo_usuario, ativo, status_aprovacao, metodo_auth, codigo_vinculo
                 FROM usuarios
                 WHERE email = %s;
             """, (email_formatado,))
@@ -207,7 +221,7 @@ def login_usuario(dados: LoginRequest):
                     detail="E-mail ou senha incorretos."
                 )
 
-            usuario_id, nome, email, senha_hash, tipo_usuario, ativo, status_aprovacao, metodo_auth = registro
+            usuario_id, nome, email, senha_hash, tipo_usuario, ativo, status_aprovacao, metodo_auth, codigo_vinculo = registro
 
             if not ativo:
                 raise HTTPException(
@@ -244,7 +258,8 @@ def login_usuario(dados: LoginRequest):
             "nome": nome,
             "email": email,
             "tipo_usuario": tipo_usuario,
-            "status_aprovacao": status_aprovacao
+            "status_aprovacao": status_aprovacao,
+            "codigo_vinculo": codigo_vinculo
         }
     }
 
@@ -267,19 +282,22 @@ def login_google(dados: GoogleAuthRequest):
         with conn.cursor() as cur:
             # 1. Verifica se já existe um usuário com este google_id
             cur.execute("""
-                SELECT id, nome, email, tipo_usuario, ativo, status_aprovacao
+                SELECT id, nome, email, tipo_usuario, ativo, status_aprovacao, crn, codigo_vinculo
                 FROM usuarios
                 WHERE google_id = %s;
             """, (google_id,))
             usuario_existente = cur.fetchone()
 
             if usuario_existente:
-                usuario_id, nome_db, email_db, tipo_usuario, ativo, status_aprovacao = usuario_existente
+                usuario_id, nome_db, email_db, tipo_usuario, ativo, status_aprovacao, crn_db, codigo_gerado = usuario_existente
                 if not ativo:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Esta conta de usuário foi desativada."
                     )
+                # Preserva integralmente os dados registrados no PostgreSQL
+                nome_retorno = nome_db
+                email_retorno = email_db
             else:
                 # 2. Verifica se o e-mail já existe com outro método de autenticação
                 cur.execute("SELECT id, metodo_auth FROM usuarios WHERE email = %s;", (email,))
@@ -294,21 +312,36 @@ def login_google(dados: GoogleAuthRequest):
                 if not dados.tipo_usuario or dados.tipo_usuario.strip().lower() not in ("paciente", "nutricionista"):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Conta nova identificada: Selecione o seu papel ('paciente' ou 'nutricionista') para concluir o cadastro com o Google."
+                        detail="Conta nova identificada: selecione o seu papel ('paciente' ou 'nutricionista') para concluir o cadastro."
                     )
 
                 tipo_usuario = dados.tipo_usuario.strip().lower()
-                status_aprovacao = "aprovado"
+
+                if tipo_usuario == "nutricionista" and (not dados.crn or not dados.crn.strip()):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Nutricionistas devem informar o CRN para concluir o cadastro."
+                    )
+                crn = dados.crn.strip() if (tipo_usuario == "nutricionista" and dados.crn) else None
+                status_aprovacao = "aprovado" if tipo_usuario == "paciente" else "pendente"
 
                 # Insere o novo usuário Google (senha_hash permanece NULL de forma segura)
+                codigo_vinculo = None
+                if tipo_usuario == "nutricionista":
+                    codigo_vinculo = f"NUTRI-{secrets.token_hex(3).upper()}"
+
                 cur.execute("""
                     INSERT INTO usuarios (
-                        nome, email, senha_hash, tipo_usuario, ativo, google_id, metodo_auth, status_aprovacao
+                        nome, email, senha_hash, tipo_usuario, ativo, google_id, metodo_auth, status_aprovacao, crn, codigo_vinculo
                     )
-                    VALUES (%s, %s, NULL, %s, TRUE, %s, 'google', %s)
-                    RETURNING id;
-                """, (nome, email, tipo_usuario, google_id, status_aprovacao))
-                usuario_id = cur.fetchone()[0]
+                    VALUES (%s, %s, NULL, %s, TRUE, %s, 'google', %s, %s, %s)
+                    RETURNING id, codigo_vinculo;
+                """, (nome, email, tipo_usuario, google_id, status_aprovacao, crn, codigo_vinculo))
+                res_novo = cur.fetchone()
+                usuario_id = res_novo[0]
+                codigo_gerado = res_novo[1]
+                nome_retorno = nome
+                email_retorno = email
 
                 # Se paciente, cria registro correspondente
                 if tipo_usuario == "paciente":
@@ -320,7 +353,7 @@ def login_google(dados: GoogleAuthRequest):
 
     token = criar_token_acesso(
         usuario_id=usuario_id,
-        email=email,
+        email=email_retorno,
         tipo_usuario=tipo_usuario
     )
 
@@ -330,10 +363,11 @@ def login_google(dados: GoogleAuthRequest):
         "token": token,
         "usuario": {
             "id": usuario_id,
-            "nome": nome,
-            "email": email,
+            "nome": nome_retorno,
+            "email": email_retorno,
             "tipo_usuario": tipo_usuario,
-            "status_aprovacao": status_aprovacao
+            "status_aprovacao": status_aprovacao,
+            "codigo_vinculo": codigo_gerado
         }
     }
 
@@ -409,6 +443,11 @@ def consultar_dados_clinicos_paciente(
                         detail="Acesso negado: Você não tem permissão para consultar dados de outro paciente."
                     )
             elif usuario["tipo_usuario"] == "nutricionista":
+                if usuario.get("status_aprovacao") != "aprovado":
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Sua conta de nutricionista está com cadastro em análise profissional (status pendente)."
+                    )
                 tem_vinculo = verificar_vinculo_nutricionista_paciente(usuario["id"], paciente_id)
                 if not tem_vinculo:
                     raise HTTPException(
@@ -425,14 +464,297 @@ def consultar_dados_clinicos_paciente(
 
 
 # ==============================================================================
+# GESTÃO DE VÍNCULOS NUTRICIONISTA <-> PACIENTE (REGRA DE NEGÓCIO E REGRA DE OURO)
+# ==============================================================================
+
+@app.get("/nutricionista/meu-codigo-vinculo")
+def obter_codigo_vinculo_nutricionista(usuario: dict = Depends(exigir_nutricionista)):
+    """
+    Retorna ou gera o código único de vínculo do nutricionista para compartilhar com seus pacientes.
+    """
+    nutri_id = usuario["id"]
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT codigo_vinculo FROM usuarios WHERE id = %s;", (nutri_id,))
+            reg = cur.fetchone()
+            codigo = reg[0] if reg else None
+
+            if not codigo:
+                # Gera um novo código caso ainda não possua
+                codigo = f"NUTRI-{secrets.token_hex(3).upper()}"
+                cur.execute("UPDATE usuarios SET codigo_vinculo = %s WHERE id = %s;", (codigo, nutri_id))
+
+    return {
+        "sucesso": True,
+        "codigo_vinculo": codigo,
+        "mensagem": "Compartilhe este código com seus pacientes para que eles se vinculem a você."
+    }
+
+
+@app.post("/paciente/vincular-por-codigo", status_code=status.HTTP_201_CREATED)
+def vincular_paciente_por_codigo(
+    dados: VincularPorCodigoRequest,
+    usuario_paciente: dict = Depends(exigir_paciente)
+):
+    """
+    Permite ao paciente vincular-se a um nutricionista utilizando o código único fornecido pelo profissional.
+    """
+    codigo_limpo = dados.codigo.strip().upper()
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            # 1. Localiza o nutricionista pelo código de vínculo
+            cur.execute("""
+                SELECT id, nome, email, status_aprovacao
+                FROM usuarios
+                WHERE UPPER(codigo_vinculo) = %s AND tipo_usuario = 'nutricionista' AND ativo = TRUE;
+            """, (codigo_limpo,))
+            nutri = cur.fetchone()
+
+            if not nutri:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Código de vínculo inválido ou nutricionista não encontrado."
+                )
+
+            nutri_id, nutri_nome, nutri_email, nutri_status = nutri
+            if nutri_status != "aprovado":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="O cadastro deste nutricionista ainda está sob análise profissional."
+                )
+
+            # 2. Localiza o ID na tabela 'pacientes' referente ao usuário logado
+            cur.execute("SELECT id FROM pacientes WHERE usuario_id = %s;", (usuario_paciente["id"],))
+            p_reg = cur.fetchone()
+            if not p_reg:
+                cur.execute("INSERT INTO pacientes (usuario_id) VALUES (%s) RETURNING id;", (usuario_paciente["id"],))
+                p_reg = cur.fetchone()
+
+            paciente_id = p_reg[0]
+
+            # 3. Verifica se o paciente já tem algum vínculo ativo
+            cur.execute("""
+                SELECT v.id, v.nutricionista_id, u.nome
+                FROM vinculos_nutricionistas v
+                JOIN usuarios u ON u.id = v.nutricionista_id
+                WHERE v.paciente_id = %s AND v.ativo = TRUE;
+            """, (paciente_id,))
+            vinculo_atual = cur.fetchone()
+
+            if vinculo_atual:
+                if vinculo_atual[1] == nutri_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Você já está vinculado(a) a este nutricionista."
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Você já possui acompanhamento ativo com {vinculo_atual[2]}. Desvincule-se primeiro para vincular a outro profissional."
+                    )
+
+            # 4. Insere o vínculo clínico ativo
+            cur.execute("""
+                INSERT INTO vinculos_nutricionistas (nutricionista_id, paciente_id, ativo)
+                VALUES (%s, %s, TRUE);
+            """, (nutri_id, paciente_id))
+
+    return {
+        "sucesso": True,
+        "mensagem": f"Você foi vinculado(a) com sucesso ao nutricionista {nutri_nome}!",
+        "nutricionista": {
+            "id": nutri_id,
+            "nome": nutri_nome,
+            "email": nutri_email
+        }
+    }
+
+
+@app.get("/paciente/meu-nutricionista")
+def consultar_meu_nutricionista(usuario_paciente: dict = Depends(exigir_paciente)):
+    """
+    Retorna as informações do nutricionista atualmente vinculado ao paciente logado.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT u.id, u.nome, u.email, u.crn, v.data_vinculo
+                FROM vinculos_nutricionistas v
+                JOIN pacientes p ON p.id = v.paciente_id
+                JOIN usuarios u ON u.id = v.nutricionista_id
+                WHERE p.usuario_id = %s AND v.ativo = TRUE;
+            """, (usuario_paciente["id"],))
+            res = cur.fetchone()
+
+            if not res:
+                return {
+                    "sucesso": True,
+                    "vinculado": False,
+                    "nutricionista": None
+                }
+
+            return {
+                "sucesso": True,
+                "vinculado": True,
+                "nutricionista": {
+                    "id": res[0],
+                    "nome": res[1],
+                    "email": res[2],
+                    "crn": res[3],
+                    "data_vinculo": res[4].strftime("%d/%m/%Y") if res[4] else None
+                }
+            }
+
+
+@app.get("/nutricionista/meus-pacientes")
+def listar_meus_pacientes(usuario_nutri: dict = Depends(exigir_nutricionista)):
+    """
+    Lista todos os pacientes vinculados ativamente ao nutricionista logado.
+    Aplica a Regra de Ouro: o nutricionista só tem visibilidade sobre quem possui vínculo ativo com ele.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT 
+                    p.id,
+                    u.nome,
+                    u.email,
+                    p.objetivo,
+                    p.restricoes_alimentares,
+                    p.observacoes,
+                    v.data_vinculo
+                FROM vinculos_nutricionistas v
+                JOIN pacientes p ON p.id = v.paciente_id
+                JOIN usuarios u ON u.id = p.usuario_id
+                WHERE v.nutricionista_id = %s AND v.ativo = TRUE
+                ORDER BY u.nome ASC;
+            """, (usuario_nutri["id"],))
+            registros = cur.fetchall()
+
+    pacientes = []
+    for r in registros:
+        pacientes.append({
+            "id": r[0],
+            "nome": r[1],
+            "email": r[2],
+            "objetivo": r[3] or "Não especificado",
+            "restricoes": r[4] or "Nenhuma",
+            "observacoes": r[5] or "",
+            "data_vinculo": r[6].strftime("%d/%m/%Y") if r[6] else None,
+            "status": "Ativo"
+        })
+
+    return {
+        "sucesso": True,
+        "total": len(pacientes),
+        "pacientes": pacientes
+    }
+
+
+@app.patch("/nutricionista/desvincular-paciente/{paciente_id}")
+def desvincular_paciente_por_nutricionista(
+    paciente_id: int,
+    usuario_nutri: dict = Depends(exigir_nutricionista)
+):
+    """
+    Encerra o vínculo ativo com um paciente.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE vinculos_nutricionistas
+                SET ativo = FALSE
+                WHERE nutricionista_id = %s AND paciente_id = %s AND ativo = TRUE;
+            """, (usuario_nutri["id"], paciente_id))
+
+            if cur.rowcount == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Vínculo ativo não encontrado com este paciente."
+                )
+
+    return {
+        "sucesso": True,
+        "mensagem": "Vínculo com o paciente encerrado com sucesso."
+    }
+
+
+@app.patch("/paciente/desvincular-nutricionista")
+def desvincular_nutricionista_por_paciente(usuario_paciente: dict = Depends(exigir_paciente)):
+    """
+    Permite ao paciente encerrar seu acompanhamento atual para poder se vincular a outro nutricionista.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM pacientes WHERE usuario_id = %s;", (usuario_paciente["id"],))
+            p_reg = cur.fetchone()
+            if not p_reg:
+                raise HTTPException(status_code=404, detail="Perfil de paciente não encontrado.")
+
+            cur.execute("""
+                UPDATE vinculos_nutricionistas
+                SET ativo = FALSE
+                WHERE paciente_id = %s AND ativo = TRUE;
+            """, (p_reg[0],))
+
+            if cur.rowcount == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Você não possui nenhum nutricionista vinculado no momento."
+                )
+
+    return {
+        "sucesso": True,
+        "mensagem": "Desvinculação realizada com sucesso. Agora você pode se vincular a outro nutricionista quando desejar."
+    }
+
+
+# ==============================================================================
 # 4. ROTAS DE EXAMES E ANÁLISE PREEXISTENTES (PRESERVADAS INTEGRALMENTE)
 # ==============================================================================
 
 @app.post("/analise")
-async def analisar_paciente(paciente: dict):
+async def analisar_paciente(
+    paciente: dict,
+    usuario: dict = Depends(obter_usuario_atual)
+):
     """
     Gera análise estruturada do paciente (compatível com a tela Analise_IA.tsx).
+    Aplica a REGRA DE OURO de autorização e vínculo:
+    - Pacientes só podem analisar a si mesmos.
+    - Nutricionistas só podem analisar pacientes com vínculo clínico ativo.
     """
+    paciente_id = paciente.get("id") or paciente.get("paciente_id")
+
+    if paciente_id:
+        try:
+            paciente_id = int(paciente_id)
+        except (ValueError, TypeError):
+            paciente_id = None
+
+    if paciente_id:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, usuario_id FROM pacientes WHERE id = %s;", (paciente_id,))
+                p_reg = cur.fetchone()
+                if not p_reg:
+                    raise HTTPException(status_code=404, detail="Paciente não encontrado.")
+                paciente_usuario_id = p_reg[1]
+
+        if usuario["tipo_usuario"] == "paciente":
+            if usuario["id"] != paciente_usuario_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: Você não tem permissão para analisar dados de outro paciente."
+                )
+        elif usuario["tipo_usuario"] == "nutricionista":
+            if not verificar_vinculo_nutricionista_paciente(usuario["id"], paciente_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: Você não possui vínculo clínico ativo com este paciente."
+                )
+
     nome = paciente.get("nome", "")
     idade = paciente.get("idade", "")
     peso = paciente.get("peso", "")
@@ -441,7 +763,7 @@ async def analisar_paciente(paciente: dict):
     resticoes = paciente.get("restricoes", "")
     observacoes = paciente.get("observacoes", "")
 
-    prompt = f"""Você é o assistente de análise nutricional do WeshDiet.
+    prompt = f"""Você é o assistente de análise nutricional do WishDiet.
 Dados do paciente: {nome}, {idade} anos, {peso} kg, {altura} cm, Objetivo: {objetivo}, Restrições: {resticoes}."""
 
     api_key = os.getenv("OPENAI_API_KEY")
@@ -478,7 +800,7 @@ Dados do paciente: {nome}, {idade} anos, {peso} kg, {altura} cm, Objetivo: {obje
 
     return {
         "status": "aguardando_api_key",
-        "mensagem": "Análise estruturada criada pelo backend WeshDiet.",
+        "mensagem": "Análise estruturada criada pelo backend WishDiet.",
         "paciente": paciente,
         "analise": analise_padrao
     }
@@ -556,6 +878,11 @@ async def analisar_exame(
                 id_paciente_final = registro_paciente[0]
 
             elif tipo_usuario == "nutricionista":
+                if usuario.get("status_aprovacao") != "aprovado":
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Sua conta de nutricionista está com cadastro em análise profissional (status pendente)."
+                    )
                 if not paciente_id:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -687,6 +1014,11 @@ def listar_meus_exames(usuario: dict = Depends(obter_usuario_atual)):
                 )
 
             elif tipo_usuario == "nutricionista":
+                if usuario.get("status_aprovacao") != "aprovado":
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Sua conta de nutricionista está com cadastro em análise profissional (status pendente)."
+                    )
                 # BUSCA OS EXAMES DE TODOS OS PACIENTES VINCULADOS AO NUTRICIONISTA
                 cur.execute(
                     """
@@ -795,6 +1127,11 @@ def visualizar_pdf_exame(
             )
 
     elif tipo_usuario == "nutricionista":
+        if usuario.get("status_aprovacao") != "aprovado":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sua conta de nutricionista está com cadastro em análise profissional (status pendente)."
+            )
         tem_vinculo = verificar_vinculo_nutricionista_paciente(
             id_usuario,
             paciente_id
@@ -893,6 +1230,11 @@ def visualizar_relatorio_exame(
             )
 
     elif tipo_usuario == "nutricionista":
+        if usuario.get("status_aprovacao") != "aprovado":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sua conta de nutricionista está com cadastro em análise profissional (status pendente)."
+            )
         tem_vinculo = verificar_vinculo_nutricionista_paciente(
             id_usuario,
             paciente_id

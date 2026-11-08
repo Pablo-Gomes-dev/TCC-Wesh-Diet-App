@@ -40,7 +40,7 @@ export default function Exames() {
 
   async function visualizarExame(exameId: number) {
     try {
-      const token = await AsyncStorage.getItem("@weshdiet:token");
+      const token = await AsyncStorage.getItem("@wishdiet:token");
 
       if (!token) {
         Alert.alert(
@@ -92,7 +92,7 @@ export default function Exames() {
     setErroExames("");
 
     try {
-      const token = await AsyncStorage.getItem("@weshdiet:token");
+      const token = await AsyncStorage.getItem("@wishdiet:token");
 
       if (!token) {
         throw new Error("Sessão não encontrada. Faça login novamente.");
@@ -144,7 +144,7 @@ export default function Exames() {
     }
 
     try {
-      const token = await AsyncStorage.getItem("@weshdiet:token");
+      const token = await AsyncStorage.getItem("@wishdiet:token");
 
       if (!token) {
         Alert.alert(

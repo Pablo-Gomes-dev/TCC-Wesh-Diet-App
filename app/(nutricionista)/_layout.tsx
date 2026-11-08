@@ -1,5 +1,5 @@
 // ==============================================================================
-// LAYOUT DE ABAS DO NUTRICIONISTA - WESHDIET
+// LAYOUT DE ABAS DO NUTRICIONISTA - WISHDIET
 // ==============================================================================
 // Navegação por abas inferiores exclusiva para o perfil de nutricionista.
 // Exibe apenas as funcionalidades destinadas ao profissional.
@@ -86,4 +86,3 @@ export default function NutricionistaTabLayout() {
     </Tabs>
   );
 }
-

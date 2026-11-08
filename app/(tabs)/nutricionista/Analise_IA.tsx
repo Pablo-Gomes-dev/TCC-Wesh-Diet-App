@@ -1,4 +1,4 @@
-// TELA DE ANÁLISE COM INTELIGÊNCIA ARTIFICIAL - WESHDIET
+// TELA DE ANÁLISE COM INTELIGÊNCIA ARTIFICIAL - WISHDIET
 
 // Esta tela permite recuperar os dados do paciente salvos localmente (AsyncStorage)
 // e enviá-los ao backend FastAPI para geração de uma análise nutricional com IA.

@@ -1,17 +1,17 @@
 // ==============================================================================
-// PAINEL PRINCIPAL DO NUTRICIONISTA (DASHBOARD) - WESHDIET
+// PAINEL PRINCIPAL DO NUTRICIONISTA (DASHBOARD) - WISHDIET
 // ==============================================================================
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "expo-router";
 import React from "react";
 import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 export default function DashboardNutricionistaScreen() {
@@ -19,17 +19,21 @@ export default function DashboardNutricionistaScreen() {
   const { usuario, signOut } = useAuth();
 
   const handleLogout = () => {
-    Alert.alert("Sair da Conta", "Deseja realmente encerrar sua sessão profissional?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Sair",
-        style: "destructive",
-        onPress: async () => {
-          await signOut();
-          router.replace("/login");
+    Alert.alert(
+      "Sair da Conta",
+      "Deseja realmente encerrar sua sessão profissional?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Sair",
+          style: "destructive",
+          onPress: async () => {
+            await signOut();
+            router.replace("/login");
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
 
   return (
@@ -37,7 +41,9 @@ export default function DashboardNutricionistaScreen() {
       {/* CABEÇALHO */}
       <View style={styles.cabecalho}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.saudacao}>Olá, Dr(a). {usuario?.nome || "Nutricionista"}</Text>
+          <Text style={styles.saudacao}>
+            Olá, Dr(a). {usuario?.nome || "Nutricionista"}
+          </Text>
           <View style={styles.badgePapel}>
             <Text style={styles.textoBadge}>🩺 Nutricionista</Text>
             {usuario?.crn ? (
@@ -94,7 +100,8 @@ export default function DashboardNutricionistaScreen() {
         <View style={styles.infoAcao}>
           <Text style={styles.tituloAcao}>Assistente & Análise IA</Text>
           <Text style={styles.subtituloAcao}>
-            Analisar parâmetros nutricionais e gerar diagnósticos assistidos por IA.
+            Analisar parâmetros nutricionais e gerar diagnósticos assistidos por
+            IA.
           </Text>
         </View>
       </Pressable>
@@ -122,7 +129,8 @@ export default function DashboardNutricionistaScreen() {
         <View style={styles.infoAcao}>
           <Text style={styles.tituloAcao}>Gerador de Plano Alimentar</Text>
           <Text style={styles.subtituloAcao}>
-            Construir e prescrever dietas personalizadas com tabelas nutricionais.
+            Construir e prescrever dietas personalizadas com tabelas
+            nutricionais.
           </Text>
         </View>
       </Pressable>
@@ -275,4 +283,3 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
-

@@ -1,5 +1,5 @@
 // INSERI OS PROPIOS DADOS PARA FINS DE MOSTRAR FUTURAS EVOLUÇÕES
-// TELA DE DETALHES DO PACIENTE - WESHDIET
+// TELA DE DETALHES DO PACIENTE - WISHDIET
 // ==============================================================================
 // Esta tela permite cadastrar, visualizar e editar os dados cadastrais do paciente
 // (nome, idade, peso, altura, objetivos, restrições e observações), calculando

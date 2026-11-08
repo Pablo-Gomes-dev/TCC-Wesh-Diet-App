@@ -1,5 +1,5 @@
 // ==============================================================================
-// CONTEXTO CENTRALIZADO DE AUTENTICAÇÃO E SESSÃO - WESHDIET
+// CONTEXTO CENTRALIZADO DE AUTENTICAÇÃO E SESSÃO - WISHDIET
 // ==============================================================================
 // Gerencia o estado de autenticação de forma centralizada:
 // - Restauração automática da sessão ao iniciar o aplicativo
@@ -22,6 +22,7 @@ export type Usuario = {
   status_aprovacao?: string;
   crn?: string;
   ativo?: boolean;
+  codigo_vinculo?: string;
 };
 
 type AuthContextType = {
@@ -54,8 +55,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const restaurarSessao = async () => {
     try {
-      const tokenSalvo = await AsyncStorage.getItem("@weshdiet:token");
-      const usuarioSalvo = await AsyncStorage.getItem("@weshdiet:usuario");
+      const tokenSalvo = await AsyncStorage.getItem("@wishdiet:token");
+      const usuarioSalvo = await AsyncStorage.getItem("@wishdiet:usuario");
 
       if (tokenSalvo && usuarioSalvo) {
         // VALIDA O TOKEN COM O BACKEND (FONTE CONFIÁVEL DE AUTORIZAÇÃO)
@@ -71,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setToken(tokenSalvo);
           setUsuario(usuarioBackend);
           await AsyncStorage.setItem(
-            "@weshdiet:usuario",
+            "@wishdiet:usuario",
             JSON.stringify(usuarioBackend)
           );
         } else {
@@ -88,16 +89,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const limparSessaoLocal = async () => {
-    await AsyncStorage.removeItem("@weshdiet:token");
-    await AsyncStorage.removeItem("@weshdiet:usuario");
+    await AsyncStorage.removeItem("@wishdiet:token");
+    await AsyncStorage.removeItem("@wishdiet:usuario");
     setToken(null);
     setUsuario(null);
   };
 
   // LOGIN: PERSISTE SESSÃO E ATUALIZA ESTADO
   const signIn = useCallback(async (novoToken: string, novoUsuario: Usuario) => {
-    await AsyncStorage.setItem("@weshdiet:token", novoToken);
-    await AsyncStorage.setItem("@weshdiet:usuario", JSON.stringify(novoUsuario));
+    await AsyncStorage.setItem("@wishdiet:token", novoToken);
+    await AsyncStorage.setItem("@wishdiet:usuario", JSON.stringify(novoUsuario));
     setToken(novoToken);
     setUsuario(novoUsuario);
   }, []);

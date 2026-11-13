@@ -1,24 +1,26 @@
 // ==============================================================================
 // PAINEL PRINCIPAL DO PACIENTE (DASHBOARD) - WISHDIET
 // ==============================================================================
-import { useAuth } from "@/contexts/AuthContext";
-import { useRouter } from "expo-router";
-import React, { useEffect, useState, useCallback } from "react";
 import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  ActivityIndicator,
-  Modal,
+    ConsentimentoIAModal,
+    useConsentimentoIA,
+} from "@/components/ConsetimentosIA";
+import { useAuth } from "@/contexts/AuthContext";
+import { apiFetch } from "@/services/api";
+import { useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+    ActivityIndicator,
+    Alert,
+    Modal,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.0.23:8000";
 
 interface NutricionistaVinculado {
   id: number;
@@ -32,29 +34,21 @@ export default function DashboardPacienteScreen() {
   const router = useRouter();
   const { usuario, signOut } = useAuth();
 
-  const [nutricionista, setNutricionista] = useState<NutricionistaVinculado | null>(null);
+  const [nutricionista, setNutricionista] =
+    useState<NutricionistaVinculado | null>(null);
   const [carregandoNutri, setCarregandoNutri] = useState(true);
   const [modalVinculoVisivel, setModalVinculoVisivel] = useState(false);
   const [codigoInput, setCodigoInput] = useState("");
   const [enviandoCodigo, setEnviandoCodigo] = useState(false);
+  const consentimento = useConsentimentoIA();
+  const [recusou, setRecusou] = useState(false);
 
   const carregarMeuNutricionista = useCallback(async () => {
     try {
-      const token = await AsyncStorage.getItem("@wishdiet:token");
-      if (!token) return;
-
-      const resp = await fetch(`${API_BASE_URL}/paciente/meu-nutricionista`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (resp.ok) {
-        const dados = await resp.json();
-        if (dados.vinculado && dados.nutricionista) {
-          setNutricionista(dados.nutricionista);
-        } else {
-          setNutricionista(null);
-        }
-      }
+      const dados = await apiFetch<any>("/paciente/meu-nutricionista");
+      setNutricionista(
+        dados.vinculado && dados.nutricionista ? dados.nutricionista : null,
+      );
     } catch (err) {
       console.warn("Erro ao buscar nutricionista:", err);
     } finally {
@@ -68,34 +62,31 @@ export default function DashboardPacienteScreen() {
 
   const handleVincularPorCodigo = async () => {
     if (!codigoInput.trim()) {
-      Alert.alert("Campo obrigatório", "Por favor, digite o código de vínculo fornecido pelo nutricionista.");
+      Alert.alert(
+        "Campo obrigatório",
+        "Por favor, digite o código de vínculo fornecido pelo nutricionista.",
+      );
       return;
     }
 
     setEnviandoCodigo(true);
     try {
-      const token = await AsyncStorage.getItem("@wishdiet:token");
-      const resp = await fetch(`${API_BASE_URL}/paciente/vincular-por-codigo`, {
+      const dados = await apiFetch<any>("/paciente/vincular-por-codigo", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ codigo: codigoInput.trim() }),
+        body: { codigo: codigoInput.trim() },
       });
-
-      const dados = await resp.json();
-
-      if (resp.ok) {
-        Alert.alert("Sucesso! 🎉", dados.mensagem || "Vínculo realizado com sucesso!");
-        setCodigoInput("");
-        setModalVinculoVisivel(false);
-        carregarMeuNutricionista();
-      } else {
-        Alert.alert("Atenção", dados.detail || "Não foi possível vincular com este código.");
-      }
+      Alert.alert(
+        "Sucesso! 🎉",
+        dados.mensagem || "Vínculo realizado com sucesso!",
+      );
+      setCodigoInput("");
+      setModalVinculoVisivel(false);
+      carregarMeuNutricionista();
     } catch (err) {
-      Alert.alert("Erro", "Falha de conexão com o servidor.");
+      Alert.alert(
+        "atenção",
+        err instanceof Error ? err.message : "Falha de conexão com o servidor.",
+      );
     } finally {
       setEnviandoCodigo(false);
     }
@@ -112,25 +103,22 @@ export default function DashboardPacienteScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              const token = await AsyncStorage.getItem("@wishdiet:token");
-              const resp = await fetch(`${API_BASE_URL}/paciente/desvincular-nutricionista`, {
+              await apiFetch("/paciente/desvincular-nutricionista", {
                 method: "PATCH",
-                headers: { Authorization: `Bearer ${token}` },
               });
-
-              if (resp.ok) {
-                Alert.alert("Desvinculado", "Acompanhamento encerrado.");
-                setNutricionista(null);
-              } else {
-                const erro = await resp.json().catch(() => ({}));
-                Alert.alert("Erro", erro.detail || "Não foi possível desvincular.");
-              }
+              Alert.alert("Desvinculado", "Acompanhamento encerrado.");
+              setNutricionista(null);
             } catch (err) {
-              Alert.alert("Erro", "Falha ao conectar ao servidor.");
+              Alert.alert(
+                "Erro",
+                err instanceof Error
+                  ? err.message
+                  : "Não foi possível se desvincular. Tente novamente mais tarde.",
+              );
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -150,10 +138,25 @@ export default function DashboardPacienteScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ConsentimentoIAModal
+        visivel={consentimento.concedido === null && !recusou}
+        texto={consentimento.texto}
+        enviando={consentimento.enviando}
+        aoAceitar={() => {
+          consentimento.registrar(true);
+        }}
+        aoRecusar={async () => {
+          await consentimento.registrar(false);
+          setRecusou(true);
+        }}
+      />
+
       {/* CABEÇALHO */}
       <View style={styles.cabecalho}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.saudacao}>Olá, {usuario?.nome || "Paciente"}</Text>
+          <Text style={styles.saudacao}>
+            Olá, {usuario?.nome || "Paciente"}
+          </Text>
           <View style={styles.badgePapel}>
             <Text style={styles.textoBadge}>👤 Paciente</Text>
           </View>
@@ -168,12 +171,16 @@ export default function DashboardPacienteScreen() {
       {carregandoNutri ? (
         <View style={styles.cardVinculoLoading}>
           <ActivityIndicator size="small" color="#2562EB" />
-          <Text style={styles.textoVinculoLoading}>Consultando seu nutricionista...</Text>
+          <Text style={styles.textoVinculoLoading}>
+            Consultando seu nutricionista...
+          </Text>
         </View>
       ) : nutricionista ? (
         <View style={styles.cardNutriAtivo}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.labelNutriAtivo}>SEU NUTRICIONISTA RESPONSÁVEL</Text>
+            <Text style={styles.labelNutriAtivo}>
+              SEU NUTRICIONISTA RESPONSÁVEL
+            </Text>
             <Text style={styles.nomeNutriAtivo}>🩺 {nutricionista.nome}</Text>
             {nutricionista.crn ? (
               <Text style={styles.crnNutriAtivo}>CRN: {nutricionista.crn}</Text>
@@ -182,7 +189,10 @@ export default function DashboardPacienteScreen() {
               Acompanhamento ativo desde {nutricionista.data_vinculo}
             </Text>
           </View>
-          <TouchableOpacity style={styles.botaoDesvincularNutri} onPress={handleDesvincular}>
+          <TouchableOpacity
+            style={styles.botaoDesvincularNutri}
+            onPress={handleDesvincular}
+          >
             <Text style={styles.textoDesvincularNutri}>Trocar</Text>
           </TouchableOpacity>
         </View>
@@ -193,9 +203,12 @@ export default function DashboardPacienteScreen() {
         >
           <Text style={styles.iconeVincular}>🔗</Text>
           <View style={{ flex: 1 }}>
-            <Text style={styles.tituloVincular}>Vincular ao seu Nutricionista</Text>
+            <Text style={styles.tituloVincular}>
+              Vincular ao seu Nutricionista
+            </Text>
             <Text style={styles.subtituloVincular}>
-              Possui o código do seu nutricionista? Toque aqui para conectar seu acompanhamento.
+              Possui o código do seu nutricionista? Toque aqui para conectar seu
+              acompanhamento.
             </Text>
           </View>
           <Text style={styles.setaVincular}>➔</Text>
@@ -269,7 +282,8 @@ export default function DashboardPacienteScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitulo}>Conectar ao Nutricionista</Text>
             <Text style={styles.modalDescricao}>
-              Digite o código fornecido pelo seu nutricionista (ex: NUTRI-A1B2C3) para liberar o acesso seguro ao seu acompanhamento:
+              Digite o código fornecido pelo seu nutricionista (ex:
+              NUTRI-A1B2C3) para liberar o acesso seguro ao seu acompanhamento:
             </Text>
 
             <TextInput

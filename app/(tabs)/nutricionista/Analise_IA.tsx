@@ -3,6 +3,7 @@
 // Esta tela permite recuperar os dados do paciente salvos localmente (AsyncStorage)
 // e enviá-los ao backend FastAPI para geração de uma análise nutricional com IA.
 
+import { apiFetch } from "@/services/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import React, { useState } from "react";
@@ -39,18 +40,10 @@ export default function AssistenteIAScreen() {
       const paciente = JSON.parse(dadosSalvos);
 
       // REQUISIÇÃO POST PARA O ENDPOINT /analise DO BACKEND FASTAPI
-      const response = await fetch(`${API_BASE_URL}/analise`, {
+      const dados = await apiFetch<any>("/analise", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(paciente),
+        body: paciente,
       });
-
-      // VERIFICAÇÃO DE RESPOSTA HTTP BEM-SUCEDIDA (CORREÇÃO DE TEMPLATE STRING COM CRASE)
-      if (!response.ok) {
-        throw new Error(`Erro HTTP: ${response.status}`);
-      }
-
-      const dados = await response.json();
 
       // PROCESSAMENTO E FORMATAÇÃO DA ANÁLISE RETORNADA
       if (dados.analise) {

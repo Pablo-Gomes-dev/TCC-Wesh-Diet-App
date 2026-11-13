@@ -10,8 +10,22 @@
 # ==============================================================================
 
 import io
+import time
 from pypdf import PdfWriter
 from extrator_pdf import extrair_texto_pdf, LIMITE_TAMANHO_BYTES
+
+import time
+
+def _headers_paciente():
+    from fastapi.testclient import TestClient
+    from main import app
+    r = TestClient(app).post("/auth/cadastro", json={
+        "nome": "Paciente Teste PDF",
+        "email": f"pdf_{time.time_ns()}@teste.com",
+        "senha": "SenhaForte123@",
+        "tipo_usuario": "paciente",
+    })
+    return {"Authorization": f"Bearer {r.json()['token']}"}
 
 # FUNÇÃO AUXILIAR PARA GERAR UM PDF SINTÉTICO VÁLIDO COM TEXTO EM MEMÓRIA
 def gerar_pdf_sintetico_com_texto(conteudo_texto: str = "Exame Sintetico: Glicose 85 mg/dL") -> bytes:

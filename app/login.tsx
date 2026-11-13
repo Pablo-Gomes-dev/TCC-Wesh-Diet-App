@@ -8,6 +8,7 @@
 
 import { obterIdTokenGoogle } from "@/app/services/googleAuth";
 import { useAuth } from "@/contexts/AuthContext";
+import { API_BASE_URL } from "@/services/api";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
@@ -19,9 +20,6 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-
-// CONFIGURAÇÃO DA URL BASE DA API DO BACKEND
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.0.23:8000";
 
 export default function LoginScreen() {
   const router = useRouter();

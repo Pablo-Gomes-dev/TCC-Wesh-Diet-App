@@ -1,6 +1,7 @@
 // TELA DDE ESCOLHA DE PAPEL (PRIMEIRO ACESSO COM GOOGLE) - WISHDIET
 
 import { useAuth } from "@/contexts/AuthContext";
+import { API_BASE_URL } from "@/services/api";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -13,8 +14,6 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.0.23:8000";
 
 export default function EscolherPapelScreen() {
   const router = useRouter();

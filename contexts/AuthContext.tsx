@@ -6,12 +6,18 @@
 // - Validação do token com o backend (/auth/me)
 // - Funções signIn e signOut acessíveis em todo o aplicativo
 // - Atualiza o perfil local com os dados mais recentes do backend
+// - Encerra a sessão automaticamente quando a API responde 401
 // ==============================================================================
 
+import { API_BASE_URL, definirAoSessaoExpirar } from "@/services/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.0.23:8000";
+import React, {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useState,
+} from "react";
 
 // TIPOS
 export type Usuario = {
@@ -48,68 +54,86 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // RESTAURAÇÃO AUTOMÁTICA DA SESSÃO AO MONTAR
-  useEffect(() => {
-    restaurarSessao();
-  }, []);
-
-  const restaurarSessao = async () => {
-    try {
-      const tokenSalvo = await AsyncStorage.getItem("@wishdiet:token");
-      const usuarioSalvo = await AsyncStorage.getItem("@wishdiet:usuario");
-
-      if (tokenSalvo && usuarioSalvo) {
-        // VALIDA O TOKEN COM O BACKEND (FONTE CONFIÁVEL DE AUTORIZAÇÃO)
-        const resposta = await fetch(`${API_BASE_URL}/auth/me`, {
-          headers: { Authorization: `Bearer ${tokenSalvo}` },
-        });
-
-        if (resposta.ok) {
-          const dados = await resposta.json();
-          const usuarioBackend = dados.usuario;
-
-          // Atualiza os dados locais com os do backend (tipo_usuario confiável)
-          setToken(tokenSalvo);
-          setUsuario(usuarioBackend);
-          await AsyncStorage.setItem(
-            "@wishdiet:usuario",
-            JSON.stringify(usuarioBackend)
-          );
-        } else {
-          // Token inválido ou expirado — limpa sessão
-          await limparSessaoLocal();
-        }
-      }
-    } catch {
-      // Sem conexão ou erro inesperado — limpa sessão por segurança
-      await limparSessaoLocal();
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const limparSessaoLocal = async () => {
+  // LIMPA A SESSÃO LOCAL (TOKEN, PERFIL E ESTADO)
+  const limparSessaoLocal = useCallback(async () => {
     await AsyncStorage.removeItem("@wishdiet:token");
     await AsyncStorage.removeItem("@wishdiet:usuario");
     setToken(null);
     setUsuario(null);
-  };
+  }, []);
+
+  // RESTAURAÇÃO AUTOMÁTICA DA SESSÃO AO MONTAR
+  useEffect(() => {
+    const restaurarSessao = async () => {
+      try {
+        const tokenSalvo = await AsyncStorage.getItem("@wishdiet:token");
+        const usuarioSalvo = await AsyncStorage.getItem("@wishdiet:usuario");
+
+        if (tokenSalvo && usuarioSalvo) {
+          // VALIDA O TOKEN COM O BACKEND (FONTE CONFIÁVEL DE AUTORIZAÇÃO)
+          const resposta = await fetch(`${API_BASE_URL}/auth/me`, {
+            headers: { Authorization: `Bearer ${tokenSalvo}` },
+          });
+
+          if (resposta.ok) {
+            const dados = await resposta.json();
+            const usuarioBackend = dados.usuario;
+
+            // Atualiza os dados locais com os do backend (tipo_usuario confiável)
+            setToken(tokenSalvo);
+            setUsuario(usuarioBackend);
+            await AsyncStorage.setItem(
+              "@wishdiet:usuario",
+              JSON.stringify(usuarioBackend),
+            );
+          } else {
+            // Token inválido ou expirado — limpa sessão
+            await limparSessaoLocal();
+          }
+        }
+      } catch {
+        // Sem conexão ou erro inesperado — limpa sessão por segurança
+        await limparSessaoLocal();
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    restaurarSessao();
+  }, [limparSessaoLocal]);
+
+  // QUANDO QUALQUER CHAMADA VIA apiFetch RECEBER 401, ENCERRA A SESSÃO.
+  // O GUARDA DE ROTAS DO _layout.tsx REDIRECIONA PARA O LOGIN AUTOMATICAMENTE.
+  useEffect(() => {
+    definirAoSessaoExpirar(() => {
+      limparSessaoLocal();
+    });
+    return () => definirAoSessaoExpirar(null);
+  }, [limparSessaoLocal]);
 
   // LOGIN: PERSISTE SESSÃO E ATUALIZA ESTADO
-  const signIn = useCallback(async (novoToken: string, novoUsuario: Usuario) => {
-    await AsyncStorage.setItem("@wishdiet:token", novoToken);
-    await AsyncStorage.setItem("@wishdiet:usuario", JSON.stringify(novoUsuario));
-    setToken(novoToken);
-    setUsuario(novoUsuario);
-  }, []);
+  const signIn = useCallback(
+    async (novoToken: string, novoUsuario: Usuario) => {
+      await AsyncStorage.setItem("@wishdiet:token", novoToken);
+      await AsyncStorage.setItem(
+        "@wishdiet:usuario",
+        JSON.stringify(novoUsuario),
+      );
+      setToken(novoToken);
+      setUsuario(novoUsuario);
+    },
+    [],
+  );
 
   // LOGOUT: REMOVE SESSÃO E LIMPA ESTADO
   const signOut = useCallback(async () => {
     await limparSessaoLocal();
-  }, []);
+  }, [limparSessaoLocal]);
 
   return (
-    <AuthContext.Provider value={{ usuario, token, isLoading, signIn, signOut }}>
+    <AuthContext.Provider
+      value={{ usuario, token, isLoading, signIn, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -117,4 +141,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 // HOOK PARA ACESSAR O CONTEXTO DE AUTENTICAÇÃO
 export const useAuth = () => useContext(AuthContext);
-

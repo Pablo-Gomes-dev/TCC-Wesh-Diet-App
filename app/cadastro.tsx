@@ -7,21 +7,19 @@
 // ==============================================================================
 
 import { useAuth } from "@/contexts/AuthContext";
+import { API_BASE_URL } from "@/services/api";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
-
-// CONFIGURAÇÃO DA URL BASE DA API DO BACKEND
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.0.23:8000";
 
 export default function CadastroScreen() {
   const router = useRouter();
@@ -32,7 +30,9 @@ export default function CadastroScreen() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
-  const [tipoUsuario, setTipoUsuario] = useState<"paciente" | "nutricionista">("paciente");
+  const [tipoUsuario, setTipoUsuario] = useState<"paciente" | "nutricionista">(
+    "paciente",
+  );
   const [crn, setCrn] = useState("");
   const [carregando, setCarregando] = useState(false);
 
@@ -57,7 +57,7 @@ export default function CadastroScreen() {
     if (tipoUsuario === "nutricionista" && !crn.trim()) {
       Alert.alert(
         "CRN obrigatório",
-        "Nutricionistas devem informar o registro no CRN para liberação profissional."
+        "Nutricionistas devem informar o registro no CRN para liberação profissional.",
       );
       return;
     }
@@ -80,7 +80,9 @@ export default function CadastroScreen() {
       const dados = await resposta.json();
 
       if (!resposta.ok) {
-        throw new Error(dados.detail || "Não foi possível realizar o cadastro.");
+        throw new Error(
+          dados.detail || "Não foi possível realizar o cadastro.",
+        );
       }
 
       // PERSISTÊNCIA DA SESSÃO LOCAL (TOKEN E PERFIL DO USUÁRIO)
@@ -100,7 +102,7 @@ export default function CadastroScreen() {
       console.error("Erro no cadastro:", erro);
       Alert.alert(
         "Falha no Cadastro",
-        erro instanceof Error ? erro.message : "Ocorreu um erro ao cadastrar."
+        erro instanceof Error ? erro.message : "Ocorreu um erro ao cadastrar.",
       );
     } finally {
       setCarregando(false);
@@ -111,14 +113,16 @@ export default function CadastroScreen() {
   const handleGoogleAuth = () => {
     Alert.alert(
       "Autenticação com Google",
-      "O login e cadastro com Google estão disponíveis como opção adicional. Em ambiente de homologação, utilize as credenciais configuradas."
+      "O login e cadastro com Google estão disponíveis como opção adicional. Em ambiente de homologação, utilize as credenciais configuradas.",
     );
   };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Criar Conta</Text>
-      <Text style={styles.subtitle}>Junte-se ao WishDiet para acompanhamento nutricional inteligente</Text>
+      <Text style={styles.subtitle}>
+        Junte-se ao WishDiet para acompanhamento nutricional inteligente
+      </Text>
 
       {/* SELEÇÃO OBRIGATÓRIA DO PAPEL (PACIENTE OU NUTRICIONISTA) */}
       <Text style={styles.labelSecao}>Selecione o seu perfil:</Text>
@@ -227,7 +231,10 @@ export default function CadastroScreen() {
         {carregando ? (
           <ActivityIndicator color="#FFFFFF" />
         ) : (
-          <Text style={styles.textoBotaoPrincipal}>Cadastrar como {tipoUsuario === "paciente" ? "Paciente" : "Nutricionista"}</Text>
+          <Text style={styles.textoBotaoPrincipal}>
+            Cadastrar como{" "}
+            {tipoUsuario === "paciente" ? "Paciente" : "Nutricionista"}
+          </Text>
         )}
       </TouchableOpacity>
 

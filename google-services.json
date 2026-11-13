@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "160287113942",
+    "project_id": "wish-diet-app",
+    "storage_bucket": "wish-diet-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:160287113942:android:4312df8aff81ff79c4ff77",
+        "android_client_info": {
+          "package_name": "com.wishdiet.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQVXSyrAD_eZq1557HA6uw8JQ0VzhGsLw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

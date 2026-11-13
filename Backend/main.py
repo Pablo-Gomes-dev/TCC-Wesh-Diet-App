@@ -11,6 +11,7 @@ import os
 import uuid
 import secrets
 import pathlib
+from services import auditoria
 from typing import Optional, List
 from dotenv import load_dotenv
 
@@ -32,6 +33,7 @@ STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 # IMPORTAÇÃO DOS MÓDULOS INTERNOS DO BACKEND
 from database import get_db_connection
 from extrator_pdf import extrair_texto_pdf
+from routers.ia_base import router as ia_base_router
 from auth import (
     gerar_hash_senha,
     verificar_senha,
@@ -58,6 +60,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(ia_base_router)
 
 
 # ==============================================================================
@@ -172,6 +175,8 @@ def cadastrar_usuario(dados: CadastroUsuarioRequest):
                     VALUES (%s)
                     ON CONFLICT (usuario_id) DO NOTHING;
                 """, (usuario_id,))
+    
+    auditoria.registrar(usuario_id, "cadastro", "usuarios", usuario_id)
 
     # 4. Emite o token JWT com o papel atribuído
     token = criar_token_acesso(
@@ -216,6 +221,7 @@ def login_usuario(dados: LoginRequest):
             registro = cur.fetchone()
 
             if not registro:
+                auditoria.registrar(None, "login_falha", "usuarios", None, "falha")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="E-mail ou senha incorretos."
@@ -224,6 +230,7 @@ def login_usuario(dados: LoginRequest):
             usuario_id, nome, email, senha_hash, tipo_usuario, ativo, status_aprovacao, metodo_auth, codigo_vinculo = registro
 
             if not ativo:
+                auditoria.registrar(usuario_id, "login_bloqueado", "usuarios", usuario_id, "falha")
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Esta conta de usuário foi desativada."
@@ -238,10 +245,12 @@ def login_usuario(dados: LoginRequest):
 
             # Validação criptográfica da senha
             if not verificar_senha(dados.senha, senha_hash):
+                auditoria.registrar(usuario_id, "login_falha", "usuarios", usuario_id, "falha")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="E-mail ou senha incorretos."
                 )
+            auditoria.registrar(usuario_id, "login", "usuarios", usuario_id)
 
     token = criar_token_acesso(
         usuario_id=usuario_id,
@@ -350,6 +359,7 @@ def login_google(dados: GoogleAuthRequest):
                         VALUES (%s)
                         ON CONFLICT (usuario_id) DO NOTHING;
                     """, (usuario_id,))
+                auditoria.registrar(usuario_id, "login_google", "usuarios", usuario_id)
 
     token = criar_token_acesso(
         usuario_id=usuario_id,
@@ -454,6 +464,12 @@ def consultar_dados_clinicos_paciente(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Acesso negado: Nutricionista não possui vínculo clínico ativo com este paciente."
                     )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: Perfil de usuário não autorizado."
+                )
+            auditoria.registrar(usuario["id"], "dados_clinicos_consultados", "pacientes", paciente_id)
 
             return {
                 "sucesso": True,
@@ -559,6 +575,7 @@ def vincular_paciente_por_codigo(
                 INSERT INTO vinculos_nutricionistas (nutricionista_id, paciente_id, ativo)
                 VALUES (%s, %s, TRUE);
             """, (nutri_id, paciente_id))
+        auditoria.registrar(usuario_paciente["id"], "vinculo_criado", "pacientes", paciente_id)
 
     return {
         "sucesso": True,
@@ -673,6 +690,7 @@ def desvincular_paciente_por_nutricionista(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Vínculo ativo não encontrado com este paciente."
                 )
+            auditoria.registrar(usuario_nutri["id"], "vinculo_encerrado", "pacientes", paciente_id)
 
     return {
         "sucesso": True,
@@ -703,6 +721,7 @@ def desvincular_nutricionista_por_paciente(usuario_paciente: dict = Depends(exig
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Você não possui nenhum nutricionista vinculado no momento."
                 )
+            auditoria.registrar(usuario_paciente["id"], "vinculo_encerrado", "pacientes", p_reg[0])
 
     return {
         "sucesso": True,
@@ -722,87 +741,100 @@ async def analisar_paciente(
     """
     Gera análise estruturada do paciente (compatível com a tela Analise_IA.tsx).
     Aplica a REGRA DE OURO de autorização e vínculo:
+    - Exige identificador de paciente (id ou paciente_id) válido e positivo.
     - Pacientes só podem analisar a si mesmos.
-    - Nutricionistas só podem analisar pacientes com vínculo clínico ativo.
+    - Nutricionistas só podem analisar pacientes com cadastro aprovado e vínculo clínico ativo.
     """
-    paciente_id = paciente.get("id") or paciente.get("paciente_id")
+    id_campo = paciente.get("id")
+    if id_campo is None:
+        id_campo = paciente.get("paciente_id")
 
-    if paciente_id:
-        try:
-            paciente_id = int(paciente_id)
-        except (ValueError, TypeError):
-            paciente_id = None
+    if id_campo is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Identificador do paciente (id ou paciente_id) é obrigatório."
+        )
 
-    if paciente_id:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, usuario_id FROM pacientes WHERE id = %s;", (paciente_id,))
-                p_reg = cur.fetchone()
-                if not p_reg:
-                    raise HTTPException(status_code=404, detail="Paciente não encontrado.")
-                paciente_usuario_id = p_reg[1]
+    try:
+        # Se for booleano, float ou outro tipo inválido, rejeita
+        if isinstance(id_campo, bool) or isinstance(id_campo, float):
+            raise ValueError()
 
-        if usuario["tipo_usuario"] == "paciente":
-            if usuario["id"] != paciente_usuario_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Acesso negado: Você não tem permissão para analisar dados de outro paciente."
-                )
-        elif usuario["tipo_usuario"] == "nutricionista":
-            if not verificar_vinculo_nutricionista_paciente(usuario["id"], paciente_id):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Acesso negado: Você não possui vínculo clínico ativo com este paciente."
-                )
+        if isinstance(id_campo, int):
+            paciente_id = id_campo
+        elif isinstance(id_campo, str):
+            id_str = id_campo.strip()
+            # Deve ser estritamente dígitos (sem ponto decimal, expoente ou caracteres especiais)
+            if not id_str.isdigit():
+                raise ValueError()
+            paciente_id = int(id_str)
+        else:
+            raise ValueError()
 
-    nome = paciente.get("nome", "")
+        if paciente_id <= 0:
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Identificador do paciente inválido. Deve ser um número inteiro positivo."
+        )
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, usuario_id FROM pacientes WHERE id = %s;", (paciente_id,))
+            p_reg = cur.fetchone()
+            if not p_reg:
+                raise HTTPException(status_code=404, detail="Paciente não encontrado.")
+            paciente_usuario_id = p_reg[1]
+
+    if usuario["tipo_usuario"] == "paciente":
+        if usuario["id"] != paciente_usuario_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: Você não tem permissão para analisar dados de outro paciente."
+            )
+    elif usuario["tipo_usuario"] == "nutricionista":
+        if usuario.get("status_aprovacao") != "aprovado":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sua conta de nutricionista está com cadastro em análise profissional (status pendente)."
+            )
+        if not verificar_vinculo_nutricionista_paciente(usuario["id"], paciente_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: Você não possui vínculo clínico ativo com este paciente."
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado: Perfil de usuário não autorizado."
+        )
+
+    nome = paciente.get("nome", "")  # uso local; nunca enviado à IA
     idade = paciente.get("idade", "")
     peso = paciente.get("peso", "")
     altura = paciente.get("altura", "")
     objetivo = paciente.get("objetivo", "")
-    resticoes = paciente.get("restricoes", "")
+    restricoes = paciente.get("restricoes", "")
     observacoes = paciente.get("observacoes", "")
-
-    prompt = f"""Você é o assistente de análise nutricional do WishDiet.
-Dados do paciente: {nome}, {idade} anos, {peso} kg, {altura} cm, Objetivo: {objetivo}, Restrições: {resticoes}."""
-
-    api_key = os.getenv("OPENAI_API_KEY")
 
     analise_padrao = {
         "perfil": f"{nome}, {idade} anos, {peso} kg e {altura} cm.",
         "objetivo": objetivo,
-        "restricoes": resticoes,
+        "restricoes": restricoes,
         "observacoes": observacoes,
         "orientacoes": [
             "Manter uma alimentação equilibrada e variada.",
             "Mantenha-se hidratado ao longo do dia.",
             "Respeitar as restrições alimentares cadastradas.",
-            "Buscar acompanhamento profissional para plano individualizado."
-        ]
+            "Buscar acompanhamento profissional para plano individualizado.",
+        ],
     }
-
-    if api_key and api_key.strip() != "":
-        try:
-            client = OpenAI(api_key=api_key)
-            resposta = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return {
-                "status": "sucesso",
-                "mensagem": "Análise gerada com IA.",
-                "paciente": paciente,
-                "analise": analise_padrao,
-                "analise_ia": resposta.choices[0].message.content
-            }
-        except Exception:
-            pass
-
     return {
-        "status": "aguardando_api_key",
+        "status": "sucesso",
         "mensagem": "Análise estruturada criada pelo backend WishDiet.",
         "paciente": paciente,
-        "analise": analise_padrao
+        "analise": analise_padrao,
     }
 
 
@@ -823,37 +855,8 @@ async def analisar_exame(
     - Nunca expõe o caminho absoluto do arquivo; usa apenas uma referência interna (UUID).
     - Operação atômica: se o registro no banco falhar, o arquivo salvo é removido.
     """
-    # LEITURA DO CONTEÚDO BRUTO DO ARQUIVO ENVIADO
-    conteudo = await arquivo.read()
-
-    # VALIDAÇÃO DO TAMANHO MÁXIMO (10 MB)
-    TAMANHO_MAXIMO = 10 * 1024 * 1024
-    if len(conteudo) > TAMANHO_MAXIMO:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="O arquivo excede o tamanho máximo permitido de 10 MB."
-        )
-
-    # VALIDAÇÃO DO TIPO DO ARQUIVO PELOS BYTES MÁGICOS (não confia só na extensão)
-    # Os PDFs sempre começam com os bytes %PDF (0x25 0x50 0x44 0x46).
-    if not conteudo.startswith(b"%PDF"):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="O arquivo enviado não é um PDF válido."
-        )
-
-    # EXTRAÇÃO DO TEXTO DO PDF EM MEMÓRIA (sem salvar em disco ainda)
-    resultado_extracao = extrair_texto_pdf(
-        conteudo_bytes=conteudo,
-        nome_arquivo=arquivo.filename or "exame.pdf"
-    )
-
-    # GERAÇÃO DE REFERÊNCIA INTERNA ÚNICA PARA O ARQUIVO
-    # Usamos UUID para evitar colisões e não expor o nome original na estrutura de arquivos.
-    referencia_interna = f"{uuid.uuid4()}.pdf"
-    caminho_arquivo = STORAGE_DIR / referencia_interna
-
-    # DETERMINAÇÃO DO PACIENTE ASSOCIADO AO EXAME
+    
+    # DETERMINAÇÃO DO PACIENTE ASSOCIADO AO EXAME E VALIDAÇÃO DE PERMISSÕES
     # - Se o usuário for um paciente, o exame pertence a ele mesmo.
     # - Se for um nutricionista, o paciente_id deve ser enviado pelo frontend.
     id_usuario_logado = usuario["id"]
@@ -883,7 +886,7 @@ async def analisar_exame(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Sua conta de nutricionista está com cadastro em análise profissional (status pendente)."
                     )
-                if not paciente_id:
+                if paciente_id is None or paciente_id <= 0:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="O campo paciente_id é obrigatório para nutricionistas."
@@ -908,6 +911,50 @@ async def analisar_exame(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Tipo de usuário não autorizado a enviar exames."
                 )
+
+            #LEITURA DO PDF SOMENTE APÓS VALIDAR AS PERMISSÕES
+            TAMANHO_MAXIMO = 10 * 1024 * 1024
+            CHUNK_SIZE = 1024 * 1024 # 1 MB por bloco
+
+            chunks = []
+            total_lido = 0
+
+            while True:
+                chunk = await arquivo.read(CHUNK_SIZE)
+
+                if not chunk:
+                    break
+
+                total_lido += len(chunk)
+
+                if total_lido > TAMANHO_MAXIMO:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="O arquivo excede o tamanho máximo permitido de 10 MB."
+                    )
+                
+                chunks.append(chunk)
+
+            conteudo = b"".join(chunks)
+
+            #VALIDAÇÃO DA ASSINATURA DO PDF
+            if not conteudo.startswith(b"%PDF"):
+                raise HTTPException(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    detail="O arquivo enviado não é um PDF válido."
+                )
+
+            # EXTRAÇÃO DO TEXTO DO PDF EM MEMÓRIA
+            # Executada somente após confirmação do paciente, papel, aprovação e vínculo ativo.
+            resultado_extracao = extrair_texto_pdf(
+                conteudo_bytes=conteudo,
+                nome_arquivo=arquivo.filename or "exame.pdf"
+            )
+
+            # GERAÇÃO DE REFERÊNCIA INTERNA ÚNICA PARA O ARQUIVO
+            # Usamos UUID para evitar colisões e não expor o nome original na estrutura de arquivos.
+            referencia_interna = f"{uuid.uuid4()}.pdf"
+            caminho_arquivo = STORAGE_DIR / referencia_interna
 
             # SALVAMENTO DO ARQUIVO NO DIRETÓRIO PRIVADO
             # Realizado antes do INSERT para poder fazer rollback em caso de falha no banco.
@@ -949,6 +996,7 @@ async def analisar_exame(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Falha ao registrar o exame no banco de dados."
                 ) from erro_bd
+            auditoria.registrar(id_usuario_logado, "exame_enviado", "exames", exame_id)
 
     return {
         "sucesso": resultado_extracao["sucesso"],
@@ -1171,6 +1219,7 @@ def visualizar_pdf_exame(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="O arquivo PDF não foi encontrado no armazenamento."
         )
+    auditoria.registrar(id_usuario, "exame_pdf_visualizado", "exames", exame_id)
 
     return FileResponse(
         path=caminho_arquivo,
@@ -1285,6 +1334,7 @@ def visualizar_relatorio_exame(
         data_geracao,
         relatorio_anterior_id
     ) = relatorio
+    auditoria.registrar(id_usuario, "relatorio_visualizado", "exames", exame_id)
 
     return {
         "id": relatorio_id,

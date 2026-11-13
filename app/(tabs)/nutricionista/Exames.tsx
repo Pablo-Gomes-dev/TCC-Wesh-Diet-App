@@ -1,3 +1,4 @@
+import { apiFetch } from "@/services/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as documentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -5,12 +6,12 @@ import * as IntentLauncher from "expo-intent-launcher";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 // CONFIGURAÇÃO DA URL BASE DA API DO BACKEND
@@ -92,30 +93,10 @@ export default function Exames() {
     setErroExames("");
 
     try {
-      const token = await AsyncStorage.getItem("@wishdiet:token");
-
-      if (!token) {
-        throw new Error("Sessão não encontrada. Faça login novamente.");
-      }
-
-      const resposta = await fetch(`${API_BASE_URL}/exames/meus`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
-      });
-
-      const dados = await resposta.json();
-
-      if (!resposta.ok) {
-        throw new Error(dados.detail || "Não foi possível carregar os exames.");
-      }
-
+      const dados = await apiFetch<{ exames: Exame[] }>("/exames/meus");
       if (!Array.isArray(dados.exames)) {
         throw new Error("O backend retornou uma resposta inesperada.");
       }
-
       setExames(dados.exames);
     } catch (error) {
       console.error("Erro ao carregar exames:", error);

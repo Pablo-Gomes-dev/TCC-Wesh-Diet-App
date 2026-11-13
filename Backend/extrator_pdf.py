@@ -14,9 +14,9 @@ from pypdf.errors import PdfReadError
 # ------------------------------------------------------------------------------
 # CONSTANTES DE CONFIGURAÇÃO E SEGURANÇA
 # ------------------------------------------------------------------------------
-# Limite máximo de tamanho do arquivo permitido para upload (15 Megabytes).
+# Limite máximo de tamanho do arquivo permitido para upload (10 Megabytes).
 # Evita consumo excessivo de memória no servidor caso arquivos gigantes sejam enviados.
-LIMITE_TAMANHO_BYTES: int = 15 * 1024 * 1024  # 15 MB
+LIMITE_TAMANHO_BYTES: int = 10 * 1024 * 1024  # 10 MB
 
 
 def extrair_texto_pdf(conteudo_bytes: bytes, nome_arquivo: str = "documento.pdf") -> Dict[str, Any]:
@@ -51,7 +51,7 @@ def extrair_texto_pdf(conteudo_bytes: bytes, nome_arquivo: str = "documento.pdf"
         tamanho_mb = round(tamanho_bytes / (1024 * 1024), 2)
         return {
             "sucesso": False,
-            "mensagem": f"O arquivo excede o limite máximo permitido de 15 MB (tamanho atual: {tamanho_mb} MB).",
+            "mensagem": f"O arquivo excede o limite máximo permitido de 10 MB (tamanho atual: {tamanho_mb} MB).",
             "nome_arquivo": nome_arquivo,
             "tamanho_bytes": tamanho_bytes,
             "total_paginas": 0,

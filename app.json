@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "wish-diet-app",
-    "slug": "wish-diet-app",
+    "slug": "wesh-diet-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -18,6 +18,7 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.wishdiet.app"
@@ -27,6 +28,8 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "@react-native-google-signin/google-signin",
+      "expo-build-properties",
       "expo-router",
       [
         "expo-splash-screen",
@@ -39,9 +42,7 @@
             "backgroundColor": "#000000"
           }
         }
-      ],
-      "expo-web-browser",
-      "@react-native-google-signin/google-signin"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -52,6 +53,7 @@
       "eas": {
         "projectId": "96d3f278-0ed7-4b09-a17b-3e34eab5f779"
       }
-    }
+    },
+    "owner": "pablo-gomes-dev"
   }
 }

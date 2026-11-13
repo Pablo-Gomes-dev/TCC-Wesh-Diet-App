@@ -1,24 +1,22 @@
 // ==============================================================================
 // TELA DE GESTÃO DE PACIENTES DO NUTRICIONISTA - WISHDIET
 // ==============================================================================
-import React, { useEffect, useState, useCallback } from "react";
-import {
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  ActivityIndicator,
-  Alert,
-  Modal,
-  RefreshControl,
-} from "react-native";
-import { useRouter } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@/contexts/AuthContext";
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.0.23:8000";
+import { ApiError, apiFetch } from "@/services/api";
+import { useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    Modal,
+    Pressable,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
 
 interface PacienteVinculado {
   id: number;
@@ -38,22 +36,17 @@ export default function PacientesNutricionistaScreen() {
   const [pacientes, setPacientes] = useState<PacienteVinculado[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
-  const [codigoVinculo, setCodigoVinculo] = useState<string | null>(usuario?.codigo_vinculo || null);
+  const [codigoVinculo, setCodigoVinculo] = useState<string | null>(
+    usuario?.codigo_vinculo || null,
+  );
   const [modalCodigoVisivel, setModalCodigoVisivel] = useState(false);
 
   const carregarCodigoVinculo = useCallback(async () => {
     try {
-      const token = await AsyncStorage.getItem("@wishdiet:token");
-      if (!token) return;
-
-      const resp = await fetch(`${API_BASE_URL}/nutricionista/meu-codigo-vinculo`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (resp.ok) {
-        const dados = await resp.json();
-        setCodigoVinculo(dados.codigo_vinculo);
-      }
+      const dados = await apiFetch<{ codigo_vinculo: string }>(
+        "/nutricionista/codigo-vinculo",
+      );
+      setCodigoVinculo(dados.codigo_vinculo);
     } catch (err) {
       console.warn("Erro ao carregar código de vínculo:", err);
     }
@@ -61,27 +54,22 @@ export default function PacientesNutricionistaScreen() {
 
   const carregarPacientes = useCallback(async () => {
     try {
-      const token = await AsyncStorage.getItem("@wishdiet:token");
-      if (!token) {
+      const dados = await apiFetch<{ pacientes: PacienteVinculado[] }>(
+        "/nutricionista/meus-pacientes",
+      );
+      setPacientes(dados.pacientes || []);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
         Alert.alert("Erro", "Sessão expirada. Faça login novamente.");
         router.replace("/login");
-        return;
-      }
-
-      const resp = await fetch(`${API_BASE_URL}/nutricionista/meus-pacientes`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (resp.ok) {
-        const dados = await resp.json();
-        setPacientes(dados.pacientes || []);
       } else {
-        const erro = await resp.json().catch(() => ({}));
-        Alert.alert("Atenção", erro.detail || "Não foi possível carregar os pacientes.");
+        Alert.alert(
+          "Atenção",
+          err instanceof Error
+            ? err.message
+            : "Não foi possível carregar os pacientes.",
+        );
       }
-    } catch (err) {
-      console.error("Falha ao buscar pacientes:", err);
-      Alert.alert("Erro de Conexão", "Não foi possível conectar ao servidor.");
     } finally {
       setCarregando(false);
       setAtualizando(false);
@@ -110,25 +98,25 @@ export default function PacientesNutricionistaScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              const token = await AsyncStorage.getItem("@wishdiet:token");
-              const resp = await fetch(`${API_BASE_URL}/nutricionista/desvincular-paciente/${pacienteId}`, {
-                method: "PATCH",
-                headers: { Authorization: `Bearer ${token}` },
-              });
-
-              if (resp.ok) {
-                Alert.alert("Sucesso", "Vínculo encerrado com sucesso.");
-                carregarPacientes();
-              } else {
-                const erro = await resp.json().catch(() => ({}));
-                Alert.alert("Erro", erro.detail || "Falha ao desvincular paciente.");
-              }
+              await apiFetch(
+                `/nutricionista/desvincular-paciente/${pacienteId}`,
+                {
+                  method: "PATCH",
+                },
+              );
+              Alert.alert("Sucesso", "Vínculo encerrado com sucesso.");
+              carregarPacientes();
             } catch (err) {
-              Alert.alert("Erro", "Não foi possível conectar ao servidor.");
+              Alert.alert(
+                "Erro",
+                err instanceof Error
+                  ? err.message
+                  : "Falha ao desvincular paciente.",
+              );
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -136,19 +124,25 @@ export default function PacientesNutricionistaScreen() {
     <View style={styles.container}>
       {/* CABEÇALHO */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.botaoVoltar} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.botaoVoltar}
+          onPress={() => router.back()}
+        >
           <Text style={styles.textoVoltar}>⬅ Voltar</Text>
         </TouchableOpacity>
         <Text style={styles.titulo}>Meus Pacientes</Text>
         <Text style={styles.subtitulo}>
-          Gerencie os pacientes vinculados ao seu CRN com proteção clínica total.
+          Gerencie os pacientes vinculados ao seu CRN com proteção clínica
+          total.
         </Text>
 
         {/* CARD COM O CÓDIGO DE VÍNCULO */}
         <View style={styles.cardCodigo}>
           <View style={{ flex: 1 }}>
             <Text style={styles.labelCodigo}>SEU CÓDIGO DE VÍNCULO:</Text>
-            <Text style={styles.valorCodigo}>{codigoVinculo || "Carregando..."}</Text>
+            <Text style={styles.valorCodigo}>
+              {codigoVinculo || "Carregando..."}
+            </Text>
           </View>
           <TouchableOpacity
             style={styles.botaoCompartilhar}
@@ -163,14 +157,18 @@ export default function PacientesNutricionistaScreen() {
       {carregando ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2562EB" />
-          <Text style={styles.loadingText}>Carregando pacientes autorizados...</Text>
+          <Text style={styles.loadingText}>
+            Carregando pacientes autorizados...
+          </Text>
         </View>
       ) : (
         <FlatList
           data={pacientes}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.lista}
-          refreshControl={<RefreshControl refreshing={atualizando} onRefresh={onRefresh} />}
+          refreshControl={
+            <RefreshControl refreshing={atualizando} onRefresh={onRefresh} />
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>👥</Text>
@@ -229,10 +227,13 @@ export default function PacientesNutricionistaScreen() {
               <Text style={styles.modalTextoCodigo}>{codigoVinculo}</Text>
             </View>
             <Text style={styles.modalTexto}>
-              2. O paciente acessa o aplicativo dele, vai em "Vincular Nutricionista" e digita este código.
+              2. O paciente acessa o aplicativo dele, vai em &quot;Vincular
+              Nutricionista&quot; e digita este código.
             </Text>
             <Text style={styles.modalTexto}>
-              3. Automaticamente o prontuário, exames e dados do paciente ficam disponíveis aqui de forma segura e protegida por regra clínica (Regra de Ouro).
+              3. Automaticamente o prontuário, exames e dados do paciente ficam
+              disponíveis aqui de forma segura e protegida por regra clínica
+              (Regra de Ouro).
             </Text>
 
             <TouchableOpacity

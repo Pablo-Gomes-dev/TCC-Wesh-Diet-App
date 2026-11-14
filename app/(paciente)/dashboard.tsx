@@ -139,7 +139,7 @@ export default function DashboardPacienteScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <ConsentimentoIAModal
-        visivel={consentimento.concedido === null && !recusou}
+        visivel={consentimento.concedido === false && !recusou}
         texto={consentimento.texto}
         enviando={consentimento.enviando}
         aoAceitar={() => {

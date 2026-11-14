@@ -1,4 +1,4 @@
-- ==============================================================================
+--==============================================================================
 -- MIGRAÇÃO ADITIVA - FASE 0: INFRAESTRUTURA DE IA, REVISÃO PROFISSIONAL E LGPD
 -- ==============================================================================
 -- Não remove nem altera dados existentes. Pode ser executada mais de uma vez.

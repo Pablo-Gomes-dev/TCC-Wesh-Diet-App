@@ -321,7 +321,10 @@ def login_google(dados: GoogleAuthRequest):
                 if not dados.tipo_usuario or dados.tipo_usuario.strip().lower() not in ("paciente", "nutricionista"):
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Conta nova identificada: selecione o seu papel ('paciente' ou 'nutricionista') para concluir o cadastro."
+                        detail={
+                            "codigo":"PAPEL_OBRIGATORIO",
+                            "mensagem":"Conta nova identificada: selecione o seu papel para concluir o cadastro."
+                        }
                     )
 
                 tipo_usuario = dados.tipo_usuario.strip().lower()
@@ -359,6 +362,7 @@ def login_google(dados: GoogleAuthRequest):
                         VALUES (%s)
                         ON CONFLICT (usuario_id) DO NOTHING;
                     """, (usuario_id,))
+                    
                 auditoria.registrar(usuario_id, "login_google", "usuarios", usuario_id)
 
     token = criar_token_acesso(

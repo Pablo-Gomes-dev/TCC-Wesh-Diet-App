@@ -137,7 +137,7 @@ def test_login_google_novo_usuario_e_bloqueio_de_sobrescrita():
         dados_sem_papel = {"id_token": "token_google_mockado"}
         resp1 = cliente.post("/auth/google", json=dados_sem_papel)
         assert resp1.status_code == 400
-        assert "papel" in resp1.json()["detail"].lower()
+        assert resp1.json()["detail"]["codigo"] == "PAPEL_OBRIGATORIO"
 
         # 2. Cadastro com Google informando papel 'paciente'
         dados_com_papel = {

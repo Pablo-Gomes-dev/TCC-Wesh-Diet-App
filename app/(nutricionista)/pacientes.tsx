@@ -44,7 +44,7 @@ export default function PacientesNutricionistaScreen() {
   const carregarCodigoVinculo = useCallback(async () => {
     try {
       const dados = await apiFetch<{ codigo_vinculo: string }>(
-        "/nutricionista/codigo-vinculo",
+        "/nutricionista/meu-codigo-vinculo",
       );
       setCodigoVinculo(dados.codigo_vinculo);
     } catch (err) {

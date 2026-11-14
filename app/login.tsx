@@ -6,9 +6,9 @@
 // do banco de dados e direciona o usuário para sua respectiva área de trabalho.
 // ==============================================================================
 
-import { obterIdTokenGoogle } from "@/app/services/googleAuth";
 import { useAuth } from "@/contexts/AuthContext";
 import { API_BASE_URL } from "@/services/api";
+import { obterIdTokenGoogle } from "@/services/googleAuth";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {

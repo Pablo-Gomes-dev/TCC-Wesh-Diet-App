@@ -12,7 +12,6 @@
 import re
 from datetime import date
 from typing import Any, Dict, List, Optional
-from services.payload_ia import montar_payload_paciente
 from funcoes_wishdiet import calcular_imc, classificar_imc
  
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")

@@ -1,0 +1,499 @@
+GUIA COMPLETO DE INSTALAÇÃO E EXECUÇÃO - WISHDIET APP
+=======================================================
+
+Este documento explica como preparar uma máquina Windows para executar o projeto
+WishDiet, incluindo o aplicativo Expo/React Native, o backend FastAPI, o PostgreSQL,
+o login Google/Firebase, a integração com OpenAI e as migrações do banco.
+
+IMPORTANTE
+----------
+
+- Execute os comandos no PowerShell, salvo quando indicado o contrário.
+- Nunca publique arquivos .env, senhas, tokens ou chaves de API no GitHub.
+- O arquivo google-services.json é específico do projeto Firebase utilizado.
+- O backend precisa estar rodando antes de testar operações que usam a API.
+- O celular e o computador precisam estar na mesma rede quando o app utilizar o
+  backend local por Wi-Fi.
+
+
+1. SISTEMA OPERACIONAL E FERRAMENTAS BÁSICAS
+---------------------------------------------
+
+Necessário:
+
+- Windows 10 ou Windows 11 64 bits.
+- PowerShell.
+- Git.
+- Visual Studio Code.
+
+Instalação:
+
+1. Instale o Git pelo site oficial:
+   https://git-scm.com/download/win
+2. Instale o Visual Studio Code:
+   https://code.visualstudio.com/download
+3. Reinicie o computador, se solicitado.
+4. Confirme as instalações:
+
+   git --version
+   code --version
+
+
+2. NODE.JS E NPM
+----------------
+
+O frontend usa Node.js, npm, Expo SDK 54, React Native e Expo Router.
+
+Versões usadas pelo projeto:
+
+- Expo: ~54.0.36
+- React: 19.1.0
+- React Native: 0.81.5
+- Expo Router: ~6.0.24
+- TypeScript: ~5.9.2
+
+Instalação:
+
+1. Baixe a versão LTS do Node.js:
+   https://nodejs.org/
+2. Instale com as opções padrão.
+3. Feche e abra o PowerShell novamente.
+4. Confirme:
+
+   node --version
+   npm --version
+
+5. Clone o projeto:
+
+   git clone https://github.com/Pablo-Gomes-dev/TCC-Wesh-Diet-App.git
+   cd TCC-Wesh-Diet-App
+
+6. Instale as dependências JavaScript:
+
+   npm install
+
+Não é necessário instalar Expo globalmente. O projeto usa a versão local
+instalada em node_modules através do comando npx.
+
+
+3. PYTHON E BACKEND FASTAPI
+---------------------------
+
+O backend utiliza:
+
+- Python 3.11 ou 3.12 recomendado.
+- FastAPI.
+- Uvicorn.
+- Psycopg para PostgreSQL.
+- bcrypt e PyJWT.
+- Google Auth.
+- OpenAI SDK.
+- pypdf.
+- python-multipart.
+- pytest.
+
+Instalação do Python:
+
+1. Baixe o Python:
+   https://www.python.org/downloads/windows/
+2. Durante a instalação, marque "Add Python to PATH".
+3. Confirme:
+
+   python --version
+   pip --version
+
+Criação do ambiente virtual:
+
+1. Entre na pasta do backend:
+
+   cd Backend
+
+2. Crie o ambiente virtual:
+
+   python -m venv .venv
+
+3. Ative o ambiente virtual:
+
+   .\.venv\Scripts\Activate.ps1
+
+Se o PowerShell bloquear scripts, execute uma vez:
+
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+Depois ative novamente:
+
+   .\.venv\Scripts\Activate.ps1
+
+4. Atualize o pip:
+
+   python -m pip install --upgrade pip
+
+5. Instale as dependências:
+
+   pip install -r requirements.txt
+
+6. Confirme o FastAPI:
+
+   python -c "import fastapi, psycopg, openai; print('Backend OK')"
+
+
+4. POSTGRESQL
+------------
+
+O projeto utiliza PostgreSQL localmente.
+
+Instalação:
+
+1. Baixe o PostgreSQL:
+   https://www.postgresql.org/download/windows/
+2. Instale também o pgAdmin 4 quando oferecido.
+3. Durante a instalação, defina uma senha para o usuário postgres.
+4. Mantenha a porta padrão 5432.
+5. Confirme que o serviço PostgreSQL está em execução no Windows.
+
+Criação do banco:
+
+No pgAdmin ou no SQL Shell (psql):
+
+   CREATE DATABASE "Wish_Diet_app";
+
+O banco deve utilizar:
+
+   Host: localhost
+   Porta: 5432
+   Banco: Wish_Diet_app
+   Usuário: postgres
+   Senha: a senha definida durante a instalação
+
+Configuração do backend:
+
+Crie ou ajuste o arquivo Backend\.env com os valores da máquina:
+
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_NAME=Wish_Diet_app
+   DB_USER=postgres
+   DB_PASSWORD=SUA_SENHA_DO_POSTGRES
+
+Não copie senhas de outra máquina.
+
+
+5. MIGRAÇÕES DO BANCO
+---------------------
+
+As migrações são aditivas. Elas criam tabelas ou colunas necessárias sem excluir
+as tabelas existentes.
+
+Execute os arquivos na seguinte ordem:
+
+1. BD_postegreSQL\BD_wish_diet_app.sql
+2. BD_postegreSQL\migracao_auth_google.sql
+3. BD_postegreSQL\migracao_codigo_vinculo.sql
+4. BD_postegreSQL\migracao_IA.sql
+5. BD_postegreSQL\migracao_admin.sql
+6. BD_postegreSQL\migracao_evolucao_checkins.sql
+
+Execução pelo psql:
+
+   psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\BD_wish_diet_app.sql
+   psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\migracao_auth_google.sql
+   psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\migracao_codigo_vinculo.sql
+   psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\migracao_IA.sql
+   psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\migracao_admin.sql
+   psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\migracao_evolucao_checkins.sql
+
+Se o psql não estiver no PATH, use o caminho completo, normalmente:
+
+   "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -d Wish_Diet_app -f arquivo.sql
+
+As migrações podem ser executadas pelo SQLTools no VS Code. Instale:
+
+- SQLTools.
+- SQLTools PostgreSQL/Cockroach Driver.
+
+Crie uma conexão com host localhost, porta 5432, banco Wish_Diet_app,
+usuário postgres e a senha do PostgreSQL. Abra cada arquivo SQL e execute-o
+na ordem indicada.
+
+
+6. ARQUIVO .env DO BACKEND
+--------------------------
+
+O arquivo Backend\.env deve conter, no mínimo:
+
+   TEST_ENV=funcionando
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_NAME=Wish_Diet_app
+   DB_USER=postgres
+   DB_PASSWORD=SUA_SENHA_DO_POSTGRES
+   JWT_SECRET=UMA_CHAVE_LONGA_COM_PELO_MENOS_32_CARACTERES
+   JWT_ALGORITHM=HS256
+   JWT_EXPIRACAO_HORAS=24
+   GOOGLE_CLIENT_IDS=SEU_CLIENT_ID_WEB.apps.googleusercontent.com
+   OPENAI_API_KEY=SUA_CHAVE_OPENAI
+   OPENAI_MODEL_PLANO=MODELO_CONFIGURADO_PARA_PLANO
+   OPENAI_MODEL_EXAME=MODELO_CONFIGURADO_PARA_EXAME
+   OPENAI_MODEL_CHECKIN=MODELO_CONFIGURADO_PARA_CHECKIN
+
+Regras:
+
+- JWT_SECRET deve ter pelo menos 32 caracteres.
+- GOOGLE_CLIENT_IDS deve ser o Client ID Web do mesmo projeto Google/Firebase.
+- OPENAI_API_KEY deve ser uma chave válida e com saldo/permissão.
+- Não use aspas desnecessárias ou vírgulas para separar um único Client ID.
+- Nunca compartilhe esse arquivo.
+
+
+7. FIREBASE E LOGIN COM GOOGLE
+------------------------------
+
+O login Google usa Firebase/Google Cloud e o pacote:
+
+   @react-native-google-signin/google-signin
+
+Configuração:
+
+1. Abra o Firebase Console:
+   https://console.firebase.google.com/
+2. Abra o projeto WishDiet correto.
+3. Ative Authentication > Sign-in method > Google.
+4. Em Configurações do projeto, adicione um aplicativo Android.
+5. Use o pacote:
+
+   com.wishdiet.app
+
+6. Adicione o SHA-1 do certificado usado para assinar o APK.
+7. Baixe o google-services.json atualizado.
+8. Coloque o arquivo na raiz do projeto:
+
+   google-services.json
+
+O Expo sincroniza esse arquivo para android/app/google-services.json durante o
+prebuild. Caso o projeto nativo já exista, mantenha os dois arquivos iguais.
+
+Client ID Web:
+
+1. No Google Cloud Console do mesmo projeto, abra APIs e serviços > Credenciais.
+2. Localize ou crie uma credencial OAuth 2.0 do tipo Aplicativo da Web.
+3. Use esse Client ID nas duas variáveis:
+
+   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=SEU_CLIENT_ID_WEB.apps.googleusercontent.com
+   GOOGLE_CLIENT_IDS=SEU_CLIENT_ID_WEB.apps.googleusercontent.com
+
+4. O Client ID Web precisa pertencer ao mesmo projeto do google-services.json.
+
+SHA-1 para APK debug local:
+
+   keytool -list -v -alias androiddebugkey -keystore android\app\debug.keystore -storepass android -keypass android
+
+Para APK gerado pelo EAS, use o SHA-1 do certificado do EAS, não o SHA-1 do
+debug.keystore local. Cadastre cada certificado utilizado no Firebase.
+
+
+8. ANDROID STUDIO E SDK ANDROID
+-------------------------------
+
+Necessário para gerar APK Android localmente:
+
+- Android Studio.
+- Android SDK.
+- Android SDK Platform.
+- Android SDK Build-Tools.
+- Android SDK Platform-Tools.
+- Android Emulator, somente se for usar emulador.
+- Java JDK 17.
+
+Instalação:
+
+1. Baixe o Android Studio:
+   https://developer.android.com/studio
+2. Instale Android SDK, Platform-Tools e Build-Tools pelo SDK Manager.
+3. Instale o JDK 17. O projeto foi validado com Java 17.
+4. Configure ANDROID_HOME apontando para o SDK, normalmente:
+
+   C:\Users\SEU_USUARIO\AppData\Local\Android\Sdk
+
+5. Adicione ao PATH:
+
+   %ANDROID_HOME%\platform-tools
+   %ANDROID_HOME%\emulator
+   %ANDROID_HOME%\cmdline-tools\latest\bin
+
+6. Confirme:
+
+   adb --version
+   java -version
+
+Geração de APK local:
+
+   cd android
+   .\gradlew.bat assembleDebug
+
+O arquivo ficará em:
+
+   android\app\build\outputs\apk\debug\app-debug.apk
+
+Se o Gradle reclamar de cache/permissão, use:
+
+   $env:GRADLE_USER_HOME="C:\Users\SEU_USUARIO\wesh-diet-app\.gradle-home"
+   .\gradlew.bat assembleDebug
+
+
+9. EAS BUILD (OPCIONAL)
+-----------------------
+
+O projeto possui configuração EAS para gerar APK de desenvolvimento.
+
+Instalação e login:
+
+   npx eas-cli login
+
+Geração:
+
+   npx eas build --profile development --platform android
+
+O perfil development gera um APK interno com o Dev Client. O SHA-1 do
+certificado usado pelo EAS deve estar cadastrado no Firebase.
+
+
+10. INICIAR O BACKEND
+---------------------
+
+Em um terminal:
+
+   cd C:\caminho\do\projeto\Backend
+   .\.venv\Scripts\Activate.ps1
+   python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+Teste no computador:
+
+   http://localhost:8000/
+
+Deve retornar o status online da API.
+
+Para testar pelo celular via Wi-Fi:
+
+1. Descubra o IPv4 do computador:
+
+   ipconfig
+
+2. Atualize EXPO_PUBLIC_API_URL no .env da raiz:
+
+   EXPO_PUBLIC_API_URL=http://IP_DO_COMPUTADOR:8000
+
+3. O celular e o computador devem estar na mesma rede Wi-Fi.
+4. Permita Python/Uvicorn na rede privada do Firewall do Windows.
+5. Teste no navegador do celular:
+
+   http://IP_DO_COMPUTADOR:8000/
+
+
+11. INICIAR O EXPO
+------------------
+
+Com o backend em execução, abra outro terminal na raiz:
+
+   cd C:\caminho\do\projeto
+   npx expo start --dev-client
+
+Para limpar o cache:
+
+   npx expo start -c
+
+Com Expo Go, use `npx expo start`. Para recursos nativos como Google Sign-In,
+use um APK de desenvolvimento gerado com o Dev Client, não apenas o Expo Go.
+
+
+12. TESTES E VERIFICAÇÕES
+-------------------------
+
+Lint do frontend:
+
+   npm run lint
+
+Compilação do backend:
+
+   python -m py_compile Backend\main.py Backend\routers\evolucao.py
+
+Testes unitários básicos:
+
+   pytest -q Backend\test_WishDiet.py Backend\test_payload_ia.py
+
+Verificação das tabelas principais:
+
+   SELECT table_name FROM information_schema.tables
+   WHERE table_name IN ('usuarios', 'pacientes', 'exames', 'checkins', 'analises_checkins');
+
+Verificação da coluna administrativa:
+
+   SELECT column_name FROM information_schema.columns
+   WHERE table_name = 'usuarios' AND column_name = 'is_admin';
+
+Verificação dos dados iniciais:
+
+   SELECT column_name FROM information_schema.columns
+   WHERE table_name = 'pacientes' AND column_name = 'dados_iniciais';
+
+
+13. ACESSO ADMINISTRATIVO
+-------------------------
+
+Depois de executar migracao_admin.sql, promova um usuário confiável:
+
+   UPDATE usuarios SET is_admin = TRUE
+   WHERE email = 'email-do-administrador@exemplo.com';
+
+Saia e entre novamente no app. O usuário será direcionado para /admin.
+
+
+14. PROBLEMAS COMUNS
+--------------------
+
+Backend não conecta:
+
+- Confirme PostgreSQL ligado.
+- Confirme DB_PASSWORD no Backend\.env.
+- Confirme a porta 5432.
+- Confirme que o backend foi iniciado com --host 0.0.0.0 para acesso via Wi-Fi.
+
+Google DEVELOPER_ERROR:
+
+- Confirme o pacote com.wishdiet.app.
+- Confirme o SHA-1 do certificado que assinou o APK.
+- Confirme que o Client ID Web pertence ao mesmo projeto do google-services.json.
+- Baixe um novo google-services.json depois de alterar o Firebase.
+- Gere e instale um APK novo; o APK antigo mantém a configuração antiga.
+
+Celular não acessa a API:
+
+- Confira o IPv4 atual com ipconfig.
+- Atualize EXPO_PUBLIC_API_URL.
+- Reinicie o Expo com npx expo start -c.
+- Verifique o Firewall e a rede Wi-Fi.
+
+Migração falha:
+
+- Confirme que o banco selecionado é Wish_Diet_app.
+- Execute as migrações na ordem indicada.
+- Não execute o schema inicial em um banco que já possui tabelas sem avaliar o estado.
+- As migrações aditivas usam IF NOT EXISTS quando aplicável e não devem ser substituídas.
+
+
+15. EXECUÇÃO RÁPIDA DIÁRIA
+--------------------------
+
+Terminal 1 - backend:
+
+   cd Backend
+   .\.venv\Scripts\Activate.ps1
+   python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+Terminal 2 - frontend:
+
+   npx expo start --dev-client
+
+Se as dependências ainda não estiverem instaladas:
+
+   npm install
+

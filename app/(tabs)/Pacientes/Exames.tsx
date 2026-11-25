@@ -33,6 +33,9 @@ export default function Exames() {
     paciente_id: number;
     nome_paciente: string | null;
     tem_relatorio: boolean;
+    relatorio_id?: number | null;
+    status_revisao?: "pendente" | "aprovado" | "rejeitado" | null;
+    relatorio_data?: string | null;
   };
 
   const [exames, setExames] = useState<Exame[]>([]);
@@ -245,7 +248,22 @@ export default function Exames() {
 
       <Text style={styles.titulo}>Exames</Text>
 
-      <Text style={styles.subtitulo}>Exames disponiveis para o paciente</Text>
+      <Text style={styles.subtitulo}>Exames disponíveis para o paciente</Text>
+
+      {/* ATALHO PARA CONSULTA DE LAUDOS E RELATÓRIOS */}
+      <TouchableOpacity
+        style={styles.bannerRelatorios}
+        onPress={() => router.push("/(paciente)/relatorio")}
+      >
+        <Text style={styles.iconeBanner}>📊</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.tituloBanner}>Meus Laudos & Relatórios</Text>
+          <Text style={styles.subtituloBanner}>
+            Consulte os laudos laboratoriais avaliados e liberados pelo seu nutricionista.
+          </Text>
+        </View>
+        <Text style={styles.setaBanner}>➔</Text>
+      </TouchableOpacity>
 
       {/* ESTADOS DE CARREGAMENTO E ERRO */}
       {carregandoExames ? (
@@ -269,11 +287,31 @@ export default function Exames() {
 
             <View style={styles.botoes}>
               <TouchableOpacity
-                style={styles.botaoAnalise}
+                style={styles.botaoVisualizar}
                 onPress={() => visualizarExame(exame.id)}
               >
                 <Text style={styles.textoBotao}>Visualizar PDF</Text>
               </TouchableOpacity>
+
+              {exame.status_revisao === "aprovado" ? (
+                <TouchableOpacity
+                  style={styles.botaoLaudoAprovado}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(paciente)/relatorio",
+                      params: { exameId: String(exame.id) },
+                    })
+                  }
+                >
+                  <Text style={styles.textoBotao}>Ver Laudo Aprovado ✓</Text>
+                </TouchableOpacity>
+              ) : exame.status_revisao === "pendente" ? (
+                <View style={styles.badgePendenteExame}>
+                  <Text style={styles.textoBadgePendenteExame}>
+                    ⏳ Laudo em análise pelo nutri
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
         ))
@@ -476,5 +514,63 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 22,
     borderRadius: 8,
+  },
+
+  bannerRelatorios: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+
+  iconeBanner: {
+    fontSize: 26,
+  },
+
+  tituloBanner: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#065F46",
+    marginBottom: 2,
+  },
+
+  subtituloBanner: {
+    fontSize: 12,
+    color: "#047857",
+    lineHeight: 16,
+  },
+
+  setaBanner: {
+    fontSize: 18,
+    color: "#059669",
+    fontWeight: "bold",
+  },
+
+  botaoLaudoAprovado: {
+    backgroundColor: "#059669",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+
+  badgePendenteExame: {
+    backgroundColor: "#FEF3C7",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    justifyContent: "center",
+  },
+
+  textoBadgePendenteExame: {
+    color: "#B45309",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });

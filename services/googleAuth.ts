@@ -3,10 +3,16 @@ import { API_BASE_URL } from "@/services/api";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
 let configurado = false;
+function obterWebClientId() {
+  const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim().replace(/^['"]|['"]$/g, "");
+  if (!clientId) throw new Error("Google Login não configurado: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ausente.");
+  return clientId;
+}
+
 function configurar() {
   if (configurado) return;
   GoogleSignin.configure({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    webClientId: obterWebClientId(),
     scopes: ["email", "profile"],
   });
   configurado = true;
@@ -51,7 +57,7 @@ export async function entrarComGoogle(): Promise<ResultadoGoogle> {
 }
 
 GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  webClientId: obterWebClientId(),
   scopes: ["email", "profile"],
 });
 

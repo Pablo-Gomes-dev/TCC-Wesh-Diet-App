@@ -2,7 +2,7 @@
 # Texto estável e no início da requisição favorece o cache de prompts.
 # Ao alterar um texto, incremente a versão (é gravada junto ao resultado).
  
-VERSAO_EXAME = "exame-1"
+VERSAO_EXAME = "exame-2"
 VERSAO_PLANO = "plano-1"
 VERSAO_CHECKIN = "checkin-1"
  
@@ -16,13 +16,16 @@ _REGRAS_COMUNS = (
  
 INSTRUCOES_EXAME = (
     _REGRAS_COMUNS
-    + " Tarefa: interpretar resultados laboratoriais já extraídos. Preserve nome, valor, "
+    + " Tarefa: interpretar resultados laboratoriais já extraídos. Preserve nome do biomarcador, valor, "
     "unidade e intervalo de referência exatamente como recebidos. Classifique cada resultado "
     "em relação ao intervalo informado pelo laboratório; se o valor, a unidade ou a referência "
     "estiverem ausentes ou ambíguos, use 'ambiguo' e registre em observações. Em "
     "'pontos_de_atencao' liste apenas alterações que mereçam avaliação profissional, com "
     "linguagem cautelosa (ex.: 'valor acima da referência, avaliar'). Sempre marque "
-    "requer_avaliacao_profissional como true."
+    "requer_avaliacao_profissional como true. "
+    "RESTRIÇÃO ABSOLUTA: Concentre-se estritamente nos biomarcadores úteis à análise nutricional. "
+    "Em hipótese alguma inclua, infira ou cite dados pessoais (CPF, nomes de pacientes), datas de geração ou recebimento, "
+    "núcleo de assessoria médica, FAP, equipe médica, CRM, hashes ou CNSE/CNES."
 )
  
 INSTRUCOES_PLANO = (

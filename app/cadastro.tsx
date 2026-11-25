@@ -8,6 +8,7 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { API_BASE_URL } from "@/services/api";
+import { obterIdTokenGoogle } from "@/services/googleAuth";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -35,6 +36,7 @@ export default function CadastroScreen() {
   );
   const [crn, setCrn] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [carregandoGoogle, setCarregandoGoogle] = useState(false);
 
   // FUNÇÃO DE VALIDAÇÃO E ENVIO DO CADASTRO
   const handleCadastro = async () => {
@@ -110,11 +112,39 @@ export default function CadastroScreen() {
   };
 
   // AUTENTICAÇÃO COM GOOGLE (OPCIONAL)
-  const handleGoogleAuth = () => {
+  const handleGoogleAuthLegacy = () => {
     Alert.alert(
       "Autenticação com Google",
       "O login e cadastro com Google estão disponíveis como opção adicional. Em ambiente de homologação, utilize as credenciais configuradas.",
     );
+  };
+
+  void handleGoogleAuthLegacy;
+
+  const handleGoogleCadastro = async () => {
+    try {
+      setCarregandoGoogle(true);
+      const idToken = await obterIdTokenGoogle();
+      const resposta = await fetch(`${API_BASE_URL}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_token: idToken }),
+      });
+      const dados = await resposta.json();
+      const detalhe = dados?.detail;
+      if (resposta.status === 400 && typeof detalhe === "object" && detalhe?.codigo === "PAPEL_OBRIGATORIO") {
+        router.push({ pathname: "/escolher-papel", params: { idToken } });
+        return;
+      }
+      if (!resposta.ok) throw new Error(typeof detalhe === "string" ? detalhe : detalhe?.mensagem || "Não foi possível cadastrar com o Google.");
+      await signIn(dados.token, dados.usuario);
+      router.replace(dados.usuario.tipo_usuario === "paciente" ? "/(paciente)/dashboard" : "/(nutricionista)/dashboard");
+    } catch (erro: any) {
+      if (erro?.code === "SIGN_IN_CANCELLED" || erro?.code === "-5") return;
+      Alert.alert("Falha no Google", erro instanceof Error ? erro.message : "Não foi possível concluir o cadastro.");
+    } finally {
+      setCarregandoGoogle(false);
+    }
   };
 
   return (
@@ -246,8 +276,8 @@ export default function CadastroScreen() {
       </View>
 
       {/* BOTÃO ALTERNATIVO DO GOOGLE */}
-      <TouchableOpacity style={styles.botaoGoogle} onPress={handleGoogleAuth}>
-        <Text style={styles.textoGoogle}>Cadastrar com Google</Text>
+      <TouchableOpacity style={styles.botaoGoogle} onPress={handleGoogleCadastro} disabled={carregando || carregandoGoogle}>
+        {carregandoGoogle ? <ActivityIndicator color="#374151" /> : <Text style={styles.textoGoogle}>Cadastrar com Google</Text>}
       </TouchableOpacity>
 
       {/* LINK DE RETORNO AO LOGIN */}

@@ -28,6 +28,7 @@ export type Usuario = {
   status_aprovacao?: string;
   crn?: string;
   ativo?: boolean;
+  is_admin?: boolean;
   codigo_vinculo?: string;
 };
 

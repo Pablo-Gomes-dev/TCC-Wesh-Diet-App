@@ -2,11 +2,14 @@
 // PAINEL PRINCIPAL DO NUTRICIONISTA (DASHBOARD) - WISHDIET
 // ==============================================================================
 import { useAuth } from "@/contexts/AuthContext";
-import { useRouter } from "expo-router";
-import React from "react";
+import { ApiError, apiFetch } from "@/services/api";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
+    ActivityIndicator,
     Alert,
     Pressable,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
@@ -17,6 +20,46 @@ import {
 export default function DashboardNutricionistaScreen() {
   const router = useRouter();
   const { usuario, signOut } = useAuth();
+  const [pacientesAtivos, setPacientesAtivos] = useState<number | null>(null);
+  const [examesPendentes, setExamesPendentes] = useState<number | null>(null);
+  const [atualizando, setAtualizando] = useState(false);
+
+  const carregarResumo = useCallback(async () => {
+    try {
+      setAtualizando(true);
+      const [pacientes, relatorios] = await Promise.all([
+        apiFetch<{ pacientes?: unknown[] }>("/nutricionista/meus-pacientes"),
+        apiFetch<{
+          itens?: {
+            tem_relatorio?: boolean;
+            relatorio?: { status_revisao?: string } | null;
+          }[];
+        }>("/relatorios/nutricionista"),
+      ]);
+
+      setPacientesAtivos(Array.isArray(pacientes.pacientes) ? pacientes.pacientes.length : 0);
+      setExamesPendentes(
+        Array.isArray(relatorios.itens)
+          ? relatorios.itens.filter(
+              (item) => item.tem_relatorio && item.relatorio?.status_revisao === "pendente",
+            ).length
+          : 0,
+      );
+    } catch (erro) {
+      if (erro instanceof ApiError && erro.status === 401) {
+        await signOut();
+        router.replace("/login");
+      }
+    } finally {
+      setAtualizando(false);
+    }
+  }, [router, signOut]);
+
+  useFocusEffect(
+    useCallback(() => {
+      carregarResumo();
+    }, [carregarResumo]),
+  );
 
   const handleLogout = () => {
     Alert.alert(
@@ -37,7 +80,11 @@ export default function DashboardNutricionistaScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={atualizando} onRefresh={carregarResumo} />}
+    >
       {/* CABEÇALHO */}
       <View style={styles.cabecalho}>
         <View style={{ flex: 1 }}>
@@ -66,12 +113,20 @@ export default function DashboardNutricionistaScreen() {
       <View style={styles.gridResumo}>
         <View style={styles.cardResumo}>
           <Text style={styles.cardTitle}>Pacientes Ativos</Text>
-          <Text style={styles.cardNumber}>24</Text>
+          {pacientesAtivos === null ? (
+            <ActivityIndicator color="#059669" style={styles.indicadorResumo} />
+          ) : (
+            <Text style={styles.cardNumber}>{pacientesAtivos}</Text>
+          )}
         </View>
 
         <View style={styles.cardResumo}>
           <Text style={styles.cardTitle}>Exames Pendentes</Text>
-          <Text style={styles.cardNumber}>3</Text>
+          {examesPendentes === null ? (
+            <ActivityIndicator color="#059669" style={styles.indicadorResumo} />
+          ) : (
+            <Text style={styles.cardNumber}>{examesPendentes}</Text>
+          )}
         </View>
       </View>
 
@@ -252,6 +307,11 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#059669",
     marginTop: 6,
+  },
+  indicadorResumo: {
+    alignSelf: "flex-start",
+    marginTop: 13,
+    marginBottom: 8,
   },
   cardAcao: {
     flexDirection: "row",

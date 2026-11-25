@@ -41,8 +41,19 @@ function RootNavigation() {
       return;
     }
 
+    if (usuario.is_admin) {
+      if (estaNasTelasAuth || grupoAtual !== "admin") router.replace("/admin");
+      return;
+    }
+
     // 2. PACIENTE AUTENTICADO
     if (usuario.tipo_usuario === "paciente") {
+      if (usuario.is_admin) {
+        if (estaNasTelasAuth || grupoAtual !== "admin") {
+          router.replace("/admin");
+        }
+        return;
+      }
       // Bloqueia acesso à área do nutricionista ou retorno ao login/cadastro
       if (
         estaNasTelasAuth ||
@@ -56,6 +67,12 @@ function RootNavigation() {
 
     // 3. NUTRICIONISTA AUTENTICADO
     if (usuario.tipo_usuario === "nutricionista") {
+      if (usuario.is_admin) {
+        if (estaNasTelasAuth || grupoAtual !== "admin") {
+          router.replace("/admin");
+        }
+        return;
+      }
       // Bloqueia acesso à área do paciente ou retorno ao login/cadastro
       if (
         estaNasTelasAuth ||
@@ -87,6 +104,7 @@ function RootNavigation() {
 
       {/* GRUPO DE ABAS DO NUTRICIONISTA */}
       <Stack.Screen name="(nutricionista)" options={{ headerShown: false }} />
+      <Stack.Screen name="admin" options={{ title: "Administração", headerShown: false }} />
 
       {/* ROTAS PÚBLICAS DE AUTENTICAÇÃO */}
       <Stack.Screen

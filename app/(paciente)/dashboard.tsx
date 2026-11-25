@@ -248,6 +248,20 @@ export default function DashboardPacienteScreen() {
         </View>
       </Pressable>
 
+      {/* CARD: RELATÓRIOS E LAUDOS */}
+      <Pressable
+        style={styles.cardAcao}
+        onPress={() => router.push("/(paciente)/relatorio")}
+      >
+        <Text style={styles.iconeAcao}>📊</Text>
+        <View style={styles.infoAcao}>
+          <Text style={styles.tituloAcao}>Laudos & Relatórios</Text>
+          <Text style={styles.subtituloAcao}>
+            Consulte os relatórios e biomarcadores avaliados pelo seu nutricionista.
+          </Text>
+        </View>
+      </Pressable>
+
       {/* CARD: EVOLUÇÃO */}
       <Pressable
         style={styles.cardAcao}

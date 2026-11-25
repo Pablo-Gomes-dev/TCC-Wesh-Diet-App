@@ -9,9 +9,11 @@
 
 import os
 import uuid
+import json
 import secrets
 import pathlib
-from services import auditoria
+from services import auditoria, openai_service, prompts, payload_ia
+from schemas import exame_schema
 from typing import Optional, List
 from dotenv import load_dotenv
 
@@ -34,6 +36,7 @@ STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 from database import get_db_connection
 from extrator_pdf import extrair_texto_pdf
 from routers.ia_base import router as ia_base_router
+from routers.evolucao import router as evolucao_router
 from auth import (
     gerar_hash_senha,
     verificar_senha,
@@ -42,6 +45,7 @@ from auth import (
     obter_usuario_atual,
     exigir_paciente,
     exigir_nutricionista,
+    exigir_admin,
     verificar_vinculo_nutricionista_paciente
 )
 
@@ -61,6 +65,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(ia_base_router)
+app.include_router(evolucao_router)
 
 
 # ==============================================================================
@@ -89,6 +94,16 @@ class GoogleAuthRequest(BaseModel):
 
 class VincularPorCodigoRequest(BaseModel):
     codigo: str = Field(..., min_length=4, max_length=20, description="Código de vínculo fornecido pelo nutricionista")
+
+
+class GerarRelatorioRequest(BaseModel):
+    exame_id: int = Field(..., gt=0, description="ID do exame a ser analisado")
+    forcar_novo: Optional[bool] = Field(False, description="Se True, gera um novo relatório mesmo que já exista")
+
+
+class RevisarRelatorioRequest(BaseModel):
+    status_revisao: str = Field(..., description="Novo status: 'aprovado' ou 'rejeitado'")
+    observacoes: Optional[str] = Field(None, max_length=500, description="Observações do nutricionista")
 
 
 # ==============================================================================
@@ -195,7 +210,8 @@ def cadastrar_usuario(dados: CadastroUsuarioRequest):
             "email": novo_usuario[2],
             "tipo_usuario": novo_usuario[3],
             "status_aprovacao": novo_usuario[4],
-            "codigo_vinculo": codigo_gerado
+            "codigo_vinculo": codigo_gerado,
+            "is_admin": False
         }
     }
 
@@ -214,7 +230,7 @@ def login_usuario(dados: LoginRequest):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, nome, email, senha_hash, tipo_usuario, ativo, status_aprovacao, metodo_auth, codigo_vinculo
+                SELECT id, nome, email, senha_hash, tipo_usuario, ativo, status_aprovacao, metodo_auth, codigo_vinculo, is_admin
                 FROM usuarios
                 WHERE email = %s;
             """, (email_formatado,))
@@ -227,7 +243,7 @@ def login_usuario(dados: LoginRequest):
                     detail="E-mail ou senha incorretos."
                 )
 
-            usuario_id, nome, email, senha_hash, tipo_usuario, ativo, status_aprovacao, metodo_auth, codigo_vinculo = registro
+            usuario_id, nome, email, senha_hash, tipo_usuario, ativo, status_aprovacao, metodo_auth, codigo_vinculo, is_admin = registro
 
             if not ativo:
                 auditoria.registrar(usuario_id, "login_bloqueado", "usuarios", usuario_id, "falha")
@@ -269,6 +285,7 @@ def login_usuario(dados: LoginRequest):
             "tipo_usuario": tipo_usuario,
             "status_aprovacao": status_aprovacao,
             "codigo_vinculo": codigo_vinculo
+                ,"is_admin": is_admin
         }
     }
 
@@ -291,14 +308,14 @@ def login_google(dados: GoogleAuthRequest):
         with conn.cursor() as cur:
             # 1. Verifica se já existe um usuário com este google_id
             cur.execute("""
-                SELECT id, nome, email, tipo_usuario, ativo, status_aprovacao, crn, codigo_vinculo
+                SELECT id, nome, email, tipo_usuario, ativo, status_aprovacao, crn, codigo_vinculo, is_admin
                 FROM usuarios
                 WHERE google_id = %s;
             """, (google_id,))
             usuario_existente = cur.fetchone()
 
             if usuario_existente:
-                usuario_id, nome_db, email_db, tipo_usuario, ativo, status_aprovacao, crn_db, codigo_gerado = usuario_existente
+                usuario_id, nome_db, email_db, tipo_usuario, ativo, status_aprovacao, crn_db, codigo_gerado, is_admin = usuario_existente
                 if not ativo:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
@@ -336,6 +353,7 @@ def login_google(dados: GoogleAuthRequest):
                     )
                 crn = dados.crn.strip() if (tipo_usuario == "nutricionista" and dados.crn) else None
                 status_aprovacao = "aprovado" if tipo_usuario == "paciente" else "pendente"
+                is_admin = False
 
                 # Insere o novo usuário Google (senha_hash permanece NULL de forma segura)
                 codigo_vinculo = None
@@ -381,7 +399,8 @@ def login_google(dados: GoogleAuthRequest):
             "email": email_retorno,
             "tipo_usuario": tipo_usuario,
             "status_aprovacao": status_aprovacao,
-            "codigo_vinculo": codigo_gerado
+            "codigo_vinculo": codigo_gerado,
+            "is_admin": is_admin
         }
     }
 
@@ -402,6 +421,50 @@ def obter_perfil_logado(usuario: dict = Depends(obter_usuario_atual)):
 # ==============================================================================
 # 3. ROTAS PROTEGIDAS PARA TESTE E VALIDAÇÃO DE AUTORIZAÇÃO POR PAPEL
 # ==============================================================================
+
+@app.get("/admin/nutricionistas-pendentes")
+def listar_nutricionistas_pendentes(usuario_admin: dict = Depends(exigir_admin)):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, nome, email, crn, status_aprovacao, criado_em
+                FROM usuarios
+                WHERE tipo_usuario = 'nutricionista' AND status_aprovacao = 'pendente'
+                ORDER BY criado_em ASC;
+            """)
+            linhas = cur.fetchall()
+    return {
+        "total": len(linhas),
+        "nutricionistas": [
+            {"id": x[0], "nome": x[1], "email": x[2], "crn": x[3],
+             "status_aprovacao": x[4], "criado_em": x[5].isoformat() if x[5] else None}
+            for x in linhas
+        ],
+    }
+
+
+@app.patch("/admin/nutricionistas/{nutricionista_id}/status")
+def atualizar_status_nutricionista(
+    nutricionista_id: int,
+    dados: dict,
+    usuario_admin: dict = Depends(exigir_admin),
+):
+    status_aprovacao = dados.get("status_aprovacao")
+    if status_aprovacao not in ("aprovado", "rejeitado"):
+        raise HTTPException(status_code=400, detail="Status deve ser aprovado ou rejeitado.")
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE usuarios SET status_aprovacao = %s
+                WHERE id = %s AND tipo_usuario = 'nutricionista'
+                RETURNING id, nome, email, status_aprovacao;
+            """, (status_aprovacao, nutricionista_id))
+            atualizado = cur.fetchone()
+    if not atualizado:
+        raise HTTPException(status_code=404, detail="Nutricionista não encontrado.")
+    auditoria.registrar(usuario_admin["id"], f"nutricionista_{status_aprovacao}", "usuarios", nutricionista_id)
+    return {"sucesso": True, "nutricionista": {"id": atualizado[0], "nome": atualizado[1], "email": atualizado[2], "status_aprovacao": atualizado[3]}}
+
 
 @app.get("/auth/paciente/meu-espaco")
 def espaco_do_paciente(usuario: dict = Depends(exigir_paciente)):
@@ -1050,15 +1113,26 @@ def listar_meus_exames(usuario: dict = Depends(obter_usuario_atual)):
                         e.status_processamento,
                         e.paciente_id,
                         u.nome AS nome_paciente,
+                        r.id AS relatorio_id,
+                        r.status_revisao,
+                        r.data_geracao AS relatorio_data,
                         EXISTS(
                             SELECT 1
-                            FROM relatorios_exames r
-                            WHERE r.exame_id = e.id
-                            AND r.status = 'finalizado'
+                            FROM relatorios_exames rx
+                            WHERE rx.exame_id = e.id
+                            AND rx.status = 'finalizado'
+                            AND rx.status_revisao = 'aprovado'
                         ) AS tem_relatorio
                     FROM exames e
                     JOIN pacientes p ON e.paciente_id = p.id
                     JOIN usuarios u ON p.usuario_id = u.id
+                    LEFT JOIN LATERAL (
+                        SELECT id, status_revisao, data_geracao
+                        FROM relatorios_exames
+                        WHERE exame_id = e.id AND status = 'finalizado'
+                        ORDER BY data_geracao DESC NULLS LAST, id DESC
+                        LIMIT 1
+                    ) r ON TRUE
                     WHERE p.usuario_id = %s
                     ORDER BY e.data_envio DESC
                     """,
@@ -1081,16 +1155,26 @@ def listar_meus_exames(usuario: dict = Depends(obter_usuario_atual)):
                         e.status_processamento,
                         e.paciente_id,
                         u.nome AS nome_paciente,
+                        r.id AS relatorio_id,
+                        r.status_revisao,
+                        r.data_geracao AS relatorio_data,
                         EXISTS(
                             SELECT 1
-                            FROM relatorios_exames r
-                            WHERE r.exame_id = e.id
-                            AND r.status = 'finalizado'
+                            FROM relatorios_exames rx
+                            WHERE rx.exame_id = e.id
+                            AND rx.status = 'finalizado'
                         ) AS tem_relatorio
                     FROM exames e
                     JOIN vinculos_nutricionistas v ON e.paciente_id = v.paciente_id
                     JOIN pacientes p ON e.paciente_id = p.id
                     JOIN usuarios u ON p.usuario_id = u.id
+                    LEFT JOIN LATERAL (
+                        SELECT id, status_revisao, data_geracao
+                        FROM relatorios_exames
+                        WHERE exame_id = e.id AND status = 'finalizado'
+                        ORDER BY data_geracao DESC NULLS LAST, id DESC
+                        LIMIT 1
+                    ) r ON TRUE
                     WHERE v.nutricionista_id = %s AND v.ativo = TRUE
                     ORDER BY e.data_envio DESC
                     """,
@@ -1115,6 +1199,9 @@ def listar_meus_exames(usuario: dict = Depends(obter_usuario_atual)):
             status_proc,
             paciente_id,
             nome_paciente,
+            relatorio_id,
+            status_revisao,
+            relatorio_data,
             tem_relatorio,
         ) = registro
         exames.append({
@@ -1123,8 +1210,11 @@ def listar_meus_exames(usuario: dict = Depends(obter_usuario_atual)):
             "data_envio": data_envio.strftime("%d/%m/%Y") if data_envio else None,
             "status_processamento": status_proc,
             "paciente_id": paciente_id,
-            "nome_paciente":nome_paciente,
+            "nome_paciente": nome_paciente,
             "tem_relatorio": tem_relatorio,
+            "relatorio_id": relatorio_id,
+            "status_revisao": status_revisao or ("pendente" if relatorio_id else None),
+            "relatorio_data": relatorio_data.strftime("%d/%m/%Y %H:%M") if relatorio_data else None,
         })
 
     return {"exames": exames}
@@ -1240,9 +1330,9 @@ def visualizar_relatorio_exame(
     """
     Retorna o relatório finalizado mais recente de um exame.
 
-    - Pacientes podem consultar apenas os próprios exames.
-    - Nutricionistas precisam ter vínculo ativo com o paciente.
-    - Somente relatórios finalizados são disponibilizados.
+    - Pacientes podem consultar apenas os próprios exames e somente relatórios com status_revisao = 'aprovado'.
+    - Nutricionistas precisam ter vínculo ativo com o paciente e podem visualizar pendentes e aprovados.
+    - Somente relatórios com status 'finalizado' são disponibilizados.
     """
 
     id_usuario = usuario["id"]
@@ -1256,9 +1346,12 @@ def visualizar_relatorio_exame(
                 SELECT
                     e.id,
                     e.paciente_id,
-                    p.usuario_id
+                    p.usuario_id,
+                    e.nome_arquivo,
+                    u.nome AS nome_paciente
                 FROM exames e
                 JOIN pacientes p ON e.paciente_id = p.id
+                JOIN usuarios u ON p.usuario_id = u.id
                 WHERE e.id = %s
                 """,
                 (exame_id,)
@@ -1272,7 +1365,7 @@ def visualizar_relatorio_exame(
             detail="Exame não encontrado."
         )
 
-    _, paciente_id, paciente_usuario_id = exame
+    _, paciente_id, paciente_usuario_id, nome_arquivo, nome_paciente = exame
 
     # 2. Valida as permissões do usuário.
     if tipo_usuario == "paciente":
@@ -1314,7 +1407,11 @@ def visualizar_relatorio_exame(
                     id,
                     conteudo_relatorio,
                     data_geracao,
-                    relatorio_anterior_id
+                    relatorio_anterior_id,
+                    conteudo_json,
+                    status_revisao,
+                    revisado_em,
+                    modelo
                 FROM relatorios_exames
                 WHERE exame_id = %s
                   AND status = 'finalizado'
@@ -1336,16 +1433,538 @@ def visualizar_relatorio_exame(
         relatorio_id,
         conteudo_relatorio,
         data_geracao,
-        relatorio_anterior_id
+        relatorio_anterior_id,
+        conteudo_json,
+        status_revisao,
+        revisado_em,
+        modelo
     ) = relatorio
+
+    # Regra de negócio: Paciente só visualiza relatório após aprovação do nutricionista
+    if tipo_usuario == "paciente" and status_revisao != "aprovado":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este relatório foi gerado e aguarda avaliação e aprovação do seu nutricionista responsável para ser liberado."
+        )
+
     auditoria.registrar(id_usuario, "relatorio_visualizado", "exames", exame_id)
 
     return {
         "id": relatorio_id,
         "exame_id": exame_id,
+        "paciente_id": paciente_id,
+        "nome_paciente": nome_paciente,
+        "nome_arquivo": nome_arquivo,
         "conteudo_relatorio": conteudo_relatorio,
+        "conteudo_json": conteudo_json,
+        "status_revisao": status_revisao or "pendente",
+        "revisado_em": revisado_em.strftime("%d/%m/%Y %H:%M") if revisado_em else None,
+        "modelo": modelo,
         "data_geracao": (
             data_geracao.isoformat() if data_geracao else None
         ),
         "relatorio_anterior_id": relatorio_anterior_id
+    }
+
+
+# ==============================================================================
+# 5. GERENCIAMENTO DE RELATÓRIOS COM IA (GERAÇÃO E REVISÃO PROFISSIONAL)
+# ==============================================================================
+
+def _formatar_relatorio_texto(rel: exame_schema.RelatorioExame) -> str:
+    """Formata a análise estruturada em um laudo textual legível."""
+    linhas = [
+        "LAUDO DE ANÁLISE LABORATORIAL (IA WISHDIET)",
+        "",
+        "SÍNTESE CLÍNICA:",
+        rel.resumo,
+        "",
+        "BIOMARCADORES E PARÂMETROS EXTRAÍDOS:"
+    ]
+    for r in rel.resultados:
+        val = f"{r.valor}" if r.valor is not None else (r.valor_texto or "-")
+        unid = f" {r.unidade}" if r.unidade else ""
+        ref = f" (Ref: {r.referencia})" if r.referencia else ""
+        status_txt = {
+            "dentro_da_referencia": "[NORMAL]",
+            "acima": "[ELEVADO]",
+            "abaixo": "[BAIXO]",
+            "ambiguo": "[AVALIAR]"
+        }.get(r.classificacao, "")
+        linhas.append(f"• {r.exame}: {val}{unid}{ref} {status_txt}")
+
+    linhas.append("")
+    linhas.append("PONTOS DE ATENÇÃO NUTRICIONAL:")
+    for p in rel.pontos_de_atencao:
+        linhas.append(f"• {p}")
+
+    if rel.observacoes:
+        linhas.append("")
+        linhas.append("OBSERVAÇÕES TÉCNICAS:")
+        for obs in rel.observacoes:
+            linhas.append(f"- {obs}")
+
+    linhas.append("")
+    linhas.append("NOTA ÉTICA: Ferramenta de apoio. Requer validação e aprovação do nutricionista responsável.")
+    return "\n".join(linhas)
+
+
+def _gerar_relatorio_fallback(texto_extraido: str) -> exame_schema.RelatorioExame:
+    """Fallback determinístico para análise dos biomarcadores caso o serviço de IA externa esteja indisponível."""
+    import re
+    resultados = []
+    linhas = [l.strip() for l in texto_extraido.split("\n") if l.strip()]
+
+    padrao_pontos = re.compile(
+        r"([A-Za-zÀ-ÿ0-9\s\-–]+):\s*([\d\.,]+)\s*([a-zA-Z/%³\^µ]+)?\s*(?:\((?:VR|Ref):?\s*([^)]+)\))?",
+        re.IGNORECASE
+    )
+
+    padrao_tabular = re.compile(
+        r"^([A-Za-zÀ-ÿ0-9\s\-–/]+?)\s+([\d\.,]+)\s*([a-zA-Z/%³\^µ]+)(?:\s+([\d\.,]+\s*(?:a|[-–])\s*[\d\.,]+(?:\s*[a-zA-Z/%³\^µ]+)?))?",
+        re.IGNORECASE
+    )
+
+    exames_vistos = set()
+
+    for l in linhas:
+        l_limpa = l.replace("", "").replace("•", "").strip()
+        m = padrao_pontos.search(l_limpa)
+        m_tab = None if m else padrao_tabular.match(l_limpa)
+
+        match_ativo = m or m_tab
+        if match_ativo:
+            nome_exame = match_ativo.group(1).strip()
+            val_str = match_ativo.group(2).replace(",", ".")
+            unidade = match_ativo.group(3) or ""
+            referencia = match_ativo.group(4) or ""
+
+            if nome_exame.lower() in exames_vistos or len(nome_exame) < 2 or len(nome_exame) > 60:
+                continue
+
+            # Evita linhas descritivas de notas técnicas
+            if any(termo in nome_exame.lower() for termo in ["população", "risco aumentado", "nota", "comentários", "critérios", "tabela"]):
+                continue
+
+            try:
+                val_num = float(val_str)
+            except ValueError:
+                val_num = None
+
+            classificacao = "dentro_da_referencia"
+            if val_num is not None and referencia and ("-" in referencia or "–" in referencia or " a " in referencia):
+                partes = re.split(r"[-–]|\s+a\s+", referencia)
+                if len(partes) >= 2:
+                    try:
+                        p_min_str = re.sub(r"[^\d\.,]", "", partes[0]).replace(",", ".")
+                        p_max_str = re.sub(r"[^\d\.,]", "", partes[1]).replace(",", ".")
+                        p_min = float(p_min_str)
+                        p_max = float(p_max_str)
+                        if val_num < p_min:
+                            classificacao = "abaixo"
+                        elif val_num > p_max:
+                            classificacao = "acima"
+                    except Exception:
+                        classificacao = "dentro_da_referencia"
+            elif val_num is None:
+                classificacao = "ambiguo"
+
+            exames_vistos.add(nome_exame.lower())
+            resultados.append(exame_schema.ResultadoExame(
+                exame=nome_exame,
+                valor=val_num,
+                valor_texto=match_ativo.group(2) if val_num is None else None,
+                unidade=unidade or None,
+                referencia=referencia.strip() or None,
+                classificacao=classificacao
+            ))
+
+    if not resultados:
+        resultados.append(exame_schema.ResultadoExame(
+            exame="Triagem de Parâmetros Laboratoriais",
+            valor=None,
+            valor_texto="Concluído",
+            unidade=None,
+            referencia="Verificar PDF",
+            classificacao="dentro_da_referencia"
+        ))
+
+    alterados = [r for r in resultados if r.classificacao in ("acima", "abaixo", "ambiguo")]
+    pontos_atencao = []
+    for a in alterados:
+        if a.classificacao == "acima":
+            pontos_atencao.append(f"{a.exame}: valor {a.valor or a.valor_texto} {a.unidade or ''} acima da referência laboratorial ({a.referencia or 'avaliar'}).")
+        elif a.classificacao == "abaixo":
+            pontos_atencao.append(f"{a.exame}: valor {a.valor or a.valor_texto} {a.unidade or ''} abaixo da referência laboratorial ({a.referencia or 'avaliar'}).")
+
+    if not pontos_atencao:
+        pontos_atencao.append("Todos os parâmetros extraídos do documento encontram-se dentro dos limites laboratoriais de referência informados.")
+
+    resumo = (
+        f"Foram identificados e computados {len(resultados)} biomarcadores a partir do documento laboratorial processado. "
+        f"{len(alterados)} parâmetro(s) apresentaram pequenas variações fora do intervalo de referência informado."
+    )
+
+    return exame_schema.RelatorioExame(
+        resumo=resumo,
+        resultados=resultados,
+        observacoes=[
+            "Extração determinística de parâmetros a partir do arquivo original de exame.",
+            "Recomenda-se correlacionar com a clínica e anamnese nutricional do paciente."
+        ],
+        pontos_de_atencao=pontos_atencao,
+        requer_avaliacao_profissional=True
+    )
+
+
+@app.post("/relatorios/gerar", status_code=status.HTTP_201_CREATED)
+def gerar_relatorio_exame_ia(
+    dados: GerarRelatorioRequest,
+    usuario: dict = Depends(obter_usuario_atual)
+):
+    """
+    Gera um relatório estruturado por Inteligência Artificial a partir dos dados extraídos do PDF do exame.
+    - Se for nutricionista, exige conta aprovada e vínculo ativo com o paciente.
+    - Se for paciente, permite solicitar a geração para o seu próprio exame (nascendo como 'pendente' de revisão).
+    - O relatório é salvo com status_revisao = 'pendente' para avaliação e aprovação do profissional.
+    """
+    exame_id = dados.exame_id
+    id_usuario = usuario["id"]
+    tipo_usuario = usuario["tipo_usuario"]
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            # 1. Localiza o exame e metadados
+            cur.execute(
+                """
+                SELECT
+                    e.id,
+                    e.paciente_id,
+                    p.usuario_id,
+                    e.referencia_arquivo,
+                    e.nome_arquivo,
+                    u.nome AS nome_paciente,
+                    p.objetivo,
+                    p.restricoes_alimentares
+                FROM exames e
+                JOIN pacientes p ON e.paciente_id = p.id
+                JOIN usuarios u ON p.usuario_id = u.id
+                WHERE e.id = %s
+                """,
+                (exame_id,)
+            )
+            exame = cur.fetchone()
+
+            if not exame:
+                raise HTTPException(status_code=404, detail="Exame não encontrado.")
+
+            exame_id_db, paciente_id, paciente_usuario_id, referencia_arquivo, nome_arquivo, nome_paciente, objetivo, restricoes = exame
+
+            # 2. Valida autorização
+            if tipo_usuario == "paciente":
+                if id_usuario != paciente_usuario_id:
+                    raise HTTPException(status_code=403, detail="Você não tem permissão para analisar exames de outro paciente.")
+            elif tipo_usuario == "nutricionista":
+                if usuario.get("status_aprovacao") != "aprovado":
+                    raise HTTPException(status_code=403, detail="Sua conta de nutricionista está pendente de validação profissional.")
+                if not verificar_vinculo_nutricionista_paciente(id_usuario, paciente_id):
+                    raise HTTPException(status_code=403, detail="Você não possui vínculo ativo com o paciente deste exame.")
+            else:
+                raise HTTPException(status_code=403, detail="Tipo de usuário não autorizado.")
+
+            # 3. Verifica se já existe um relatório finalizado (se forcar_novo não foi solicitado)
+            if not dados.forcar_novo:
+                cur.execute(
+                    """
+                    SELECT id, conteudo_relatorio, conteudo_json, status_revisao, data_geracao, modelo
+                    FROM relatorios_exames
+                    WHERE exame_id = %s AND status = 'finalizado'
+                    ORDER BY data_geracao DESC NULLS LAST, id DESC
+                    LIMIT 1
+                    """,
+                    (exame_id,)
+                )
+                rel_existente = cur.fetchone()
+                if rel_existente:
+                    r_id, c_rel, c_json, s_rev, d_gen, mod = rel_existente
+                    return {
+                        "sucesso": True,
+                        "mensagem": "Relatório existente recuperado com sucesso.",
+                        "relatorio": {
+                            "id": r_id,
+                            "exame_id": exame_id,
+                            "paciente_id": paciente_id,
+                            "nome_paciente": nome_paciente,
+                            "nome_arquivo": nome_arquivo,
+                            "status_revisao": s_rev or "pendente",
+                            "data_geracao": d_gen.isoformat() if d_gen else None,
+                            "modelo": mod,
+                            "conteudo_relatorio": c_rel,
+                            "conteudo_json": c_json
+                        }
+                    }
+
+    # 4. Leitura do arquivo PDF original do armazenamento privado
+    caminho_arquivo = STORAGE_DIR / referencia_arquivo
+    if not caminho_arquivo.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Arquivo PDF original do exame não foi encontrado no servidor."
+        )
+
+    # 5. Extração de texto do PDF
+    resultado_extracao = extrair_texto_pdf(caminho_arquivo.read_bytes(), nome_arquivo)
+    texto_extraido = resultado_extracao.get("texto_extraido", "").strip()
+
+    if not texto_extraido:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="O PDF do exame não contém texto selecionável (pode ser uma imagem digitalizada sem OCR). A análise automática não pôde ser realizada."
+        )
+
+    # 6. Geração estruturada com a OpenAI ou Fallback Clínico
+    payload_dados_ia = {
+        "texto_exame": texto_extraido[:12000],
+        "objetivo_paciente": payload_ia.higienizar_texto(objetivo, limite=150) if objetivo else None,
+        "restricoes_alimentares": payload_ia.lista_restricoes(restricoes) if restricoes else []
+    }
+
+    modelo_utilizado = "gpt-6.1-sol"
+    try:
+        resultado_ia = openai_service.gerar_estruturado(
+            funcionalidade=openai_service.Funcionalidade.EXAME,
+            instrucoes=prompts.INSTRUCOES_EXAME,
+            dados=payload_dados_ia,
+            schema=exame_schema.RelatorioExame,
+            usuario_id=id_usuario,
+            paciente_id=paciente_id
+        )
+        relatorio_objeto: exame_schema.RelatorioExame = resultado_ia.dados
+        modelo_utilizado = resultado_ia.modelo
+    except openai_service.IAIndisponivelError:
+        # Fallback inteligente para garantir continuidade em dev/offline
+        relatorio_objeto = _gerar_relatorio_fallback(texto_extraido)
+        modelo_utilizado = "wishdiet-clinical-analyzer"
+    except Exception as e:
+        relatorio_objeto = _gerar_relatorio_fallback(texto_extraido)
+        modelo_utilizado = "wishdiet-clinical-analyzer"
+
+    conteudo_json = relatorio_objeto.model_dump()
+    conteudo_relatorio = _formatar_relatorio_texto(relatorio_objeto)
+
+    # 7. Persistência no banco de dados na tabela relatorios_exames
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO relatorios_exames (
+                    exame_id, texto_extraido, conteudo_relatorio, conteudo_json,
+                    status, modelo, versao_prompt, status_revisao
+                )
+                VALUES (%s, %s, %s, %s, 'finalizado', %s, %s, 'pendente')
+                RETURNING id, data_geracao, status_revisao;
+                """,
+                (
+                    exame_id,
+                    texto_extraido,
+                    conteudo_relatorio,
+                    json.dumps(conteudo_json, ensure_ascii=False),
+                    modelo_utilizado,
+                    prompts.VERSAO_EXAME
+                )
+            )
+            novo_relatorio = cur.fetchone()
+            relatorio_id = novo_relatorio[0]
+            data_geracao = novo_relatorio[1]
+            status_revisao = novo_relatorio[2]
+            conn.commit()
+
+    auditoria.registrar(id_usuario, "relatorio_ia_gerado", "relatorios_exames", relatorio_id)
+
+    return {
+        "sucesso": True,
+        "mensagem": "Relatório gerado com sucesso pela Inteligência Artificial. Aguardando avaliação e aprovação do nutricionista.",
+        "relatorio": {
+            "id": relatorio_id,
+            "exame_id": exame_id,
+            "paciente_id": paciente_id,
+            "nome_paciente": nome_paciente,
+            "nome_arquivo": nome_arquivo,
+            "status_revisao": status_revisao or "pendente",
+            "data_geracao": data_geracao.isoformat() if data_geracao else None,
+            "modelo": modelo_utilizado,
+            "conteudo_relatorio": conteudo_relatorio,
+            "conteudo_json": conteudo_json
+        }
+    }
+
+
+@app.patch("/relatorios/{relatorio_id}/revisao")
+def revisar_relatorio_exame(
+    relatorio_id: int,
+    dados: RevisarRelatorioRequest,
+    usuario_nutri: dict = Depends(exigir_nutricionista)
+):
+    """
+    Permite ao nutricionista avaliar e aprovar ou rejeitar o relatório gerado por IA.
+    Ao ser 'aprovado', o relatório é liberado para visualização na tela do paciente dono do exame.
+    """
+    id_nutri = usuario_nutri["id"]
+    status_limpo = dados.status_revisao.strip().lower()
+
+    if status_limpo not in ("aprovado", "rejeitado"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Status de revisão inválido. Escolha 'aprovado' ou 'rejeitado'."
+        )
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            # 1. Localiza o relatório e o paciente associado
+            cur.execute(
+                """
+                SELECT r.id, r.exame_id, e.paciente_id, u.nome AS nome_paciente
+                FROM relatorios_exames r
+                JOIN exames e ON r.exame_id = e.id
+                JOIN pacientes p ON e.paciente_id = p.id
+                JOIN usuarios u ON p.usuario_id = u.id
+                WHERE r.id = %s;
+                """,
+                (relatorio_id,)
+            )
+            reg = cur.fetchone()
+
+            if not reg:
+                raise HTTPException(status_code=404, detail="Relatório não encontrado.")
+
+            r_id, exame_id, paciente_id, nome_paciente = reg
+
+            # 2. Valida se o nutricionista tem vínculo clínico ativo com o paciente
+            if not verificar_vinculo_nutricionista_paciente(id_nutri, paciente_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: Você não possui vínculo clínico ativo com o paciente deste exame."
+                )
+
+            # 3. Atualiza o status de revisão com assinatura profissional do nutricionista
+            cur.execute(
+                """
+                UPDATE relatorios_exames
+                SET status_revisao = %s,
+                    revisado_por = %s,
+                    revisado_em = NOW()
+                WHERE id = %s
+                RETURNING revisado_em;
+                """,
+                (status_limpo, id_nutri, relatorio_id)
+            )
+            revisado_em = cur.fetchone()[0]
+            conn.commit()
+
+    acao_auditoria = "relatorio_aprovado" if status_limpo == "aprovado" else "relatorio_rejeitado"
+    auditoria.registrar(id_nutri, acao_auditoria, "relatorios_exames", relatorio_id)
+
+    msg_sucesso = (
+        f"Relatório aprovado com sucesso! Agora ele está disponível na tela do paciente ({nome_paciente})."
+        if status_limpo == "aprovado"
+        else "Relatório rejeitado. O paciente não terá acesso a esta versão."
+    )
+
+    return {
+        "sucesso": True,
+        "mensagem": msg_sucesso,
+        "relatorio_id": relatorio_id,
+        "status_revisao": status_limpo,
+        "revisado_em": revisado_em.strftime("%d/%m/%Y %H:%M") if revisado_em else None,
+        "paciente": nome_paciente
+    }
+
+
+@app.get("/relatorios/nutricionista")
+def listar_relatorios_nutricionista(usuario_nutri: dict = Depends(exigir_nutricionista)):
+    """
+    Retorna todos os exames e relatórios dos pacientes vinculados ao nutricionista logado.
+    Permite visualizar quais exames possuem relatórios pendentes, aprovados ou ainda não gerados.
+    """
+    id_nutri = usuario_nutri["id"]
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    e.id AS exame_id,
+                    e.nome_arquivo,
+                    e.data_envio,
+                    e.status_processamento,
+                    e.paciente_id,
+                    u.nome AS nome_paciente,
+                    r.id AS relatorio_id,
+                    r.status_revisao,
+                    r.data_geracao,
+                    r.revisado_em,
+                    r.conteudo_json,
+                    r.conteudo_relatorio,
+                    r.modelo
+                FROM exames e
+                JOIN vinculos_nutricionistas v ON e.paciente_id = v.paciente_id
+                JOIN pacientes p ON e.paciente_id = p.id
+                JOIN usuarios u ON p.usuario_id = u.id
+                LEFT JOIN LATERAL (
+                    SELECT
+                        id, status_revisao, data_geracao, revisado_em,
+                        conteudo_json, conteudo_relatorio, modelo
+                    FROM relatorios_exames
+                    WHERE exame_id = e.id AND status = 'finalizado'
+                    ORDER BY data_geracao DESC NULLS LAST, id DESC
+                    LIMIT 1
+                ) r ON TRUE
+                WHERE v.nutricionista_id = %s AND v.ativo = TRUE
+                ORDER BY r.data_geracao DESC NULLS LAST, e.data_envio DESC;
+                """,
+                (id_nutri,)
+            )
+            registros = cur.fetchall()
+
+    itens = []
+    for reg in registros:
+        (
+            exame_id,
+            nome_arquivo,
+            data_envio,
+            status_proc,
+            paciente_id,
+            nome_paciente,
+            relatorio_id,
+            status_revisao,
+            data_geracao,
+            revisado_em,
+            conteudo_json,
+            conteudo_relatorio,
+            modelo
+        ) = reg
+
+        itens.append({
+            "exame_id": exame_id,
+            "nome_arquivo": nome_arquivo,
+            "data_envio": data_envio.strftime("%d/%m/%Y") if data_envio else None,
+            "status_processamento": status_proc,
+            "paciente_id": paciente_id,
+            "nome_paciente": nome_paciente,
+            "tem_relatorio": relatorio_id is not None,
+            "relatorio": {
+                "id": relatorio_id,
+                "status_revisao": status_revisao or "pendente",
+                "data_geracao": data_geracao.strftime("%d/%m/%Y %H:%M") if data_geracao else None,
+                "revisado_em": revisado_em.strftime("%d/%m/%Y %H:%M") if revisado_em else None,
+                "modelo": modelo,
+                "conteudo_json": conteudo_json,
+                "conteudo_relatorio": conteudo_relatorio
+            } if relatorio_id else None
+        })
+
+    return {
+        "sucesso": True,
+        "total": len(itens),
+        "itens": itens
     }

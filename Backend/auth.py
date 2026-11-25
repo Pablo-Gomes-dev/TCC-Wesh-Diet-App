@@ -45,7 +45,11 @@ except ValueError:
         "CONFIGURAÇÃO INVÁLIDA: A variável JWT_EXPIRACAO_HORAS deve ser um número inteiro positivo."
     )
 
-GOOGLE_CLIENT_IDS = [c.strip() for c in os.getenv("GOOGLE_CLIENT_IDS", "").split(",") if c.strip()]
+GOOGLE_CLIENT_IDS = [
+    c.strip().strip("'\"")
+    for c in os.getenv("GOOGLE_CLIENT_IDS", os.getenv("EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID", "")).split(",")
+    if c.strip().strip("'\"")
+]
 
 # ESQUEMA DE SEGURANÇA HTTP BEARER PARA ENDPOINTS PROTEGIDOS
 security = HTTPBearer(auto_error=False)
@@ -239,7 +243,7 @@ async def obter_usuario_atual(
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, nome, email, tipo_usuario, ativo, status_aprovacao, crn, codigo_vinculo
+                SELECT id, nome, email, tipo_usuario, ativo, status_aprovacao, crn, codigo_vinculo, is_admin
                 FROM usuarios
                 WHERE id = %s;
             """, (usuario_id,))
@@ -259,7 +263,8 @@ async def obter_usuario_atual(
                 "ativo": resultado[4],
                 "status_aprovacao": resultado[5],
                 "crn": resultado[6],
-                "codigo_vinculo": resultado[7] if len(resultado) > 7 else None
+                "codigo_vinculo": resultado[7] if len(resultado) > 7 else None,
+                "is_admin": resultado[8] if len(resultado) > 8 else False,
             }
 
             if not usuario["ativo"]:
@@ -301,6 +306,23 @@ async def exigir_nutricionista(usuario: Dict[str, Any] = Depends(obter_usuario_a
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Sua conta de nutricionista está com cadastro em análise profissional (status pendente)."
+        )
+    return usuario
+
+
+async def exigir_admin(usuario: Dict[str, Any] = Depends(obter_usuario_atual)) -> Dict[str, Any]:
+    """Restringe endpoints administrativos a contas marcadas explicitamente no banco."""
+    if not usuario.get("is_admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado: recurso exclusivo para administradores.")
+    return usuario
+
+
+async def exigir_admin(usuario: Dict[str, Any] = Depends(obter_usuario_atual)) -> Dict[str, Any]:
+    """Restringe endpoints administrativos a contas marcadas explicitamente no banco."""
+    if not usuario.get("is_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado: recurso exclusivo para administradores.",
         )
     return usuario
 

@@ -269,10 +269,22 @@ export default function Exames() {
 
             <View style={styles.botoes}>
               <TouchableOpacity
-                style={styles.botaoAnalise}
+                style={styles.botaoVisualizar}
                 onPress={() => visualizarExame(exame.id)}
               >
                 <Text style={styles.textoBotao}>Visualizar PDF</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.botaoAnalise,
+                  { backgroundColor: exame.tem_relatorio ? "#16A34A" : "#2562EB" },
+                ]}
+                onPress={() => router.push("/(nutricionista)/relatorio")}
+              >
+                <Text style={styles.textoBotao}>
+                  {exame.tem_relatorio ? "Ver Laudo IA" : "Analisar com IA"}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

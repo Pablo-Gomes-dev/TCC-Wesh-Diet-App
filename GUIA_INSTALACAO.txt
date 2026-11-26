@@ -192,6 +192,8 @@ Execute os arquivos na seguinte ordem:
 4. BD_postegreSQL\migracao_IA.sql
 5. BD_postegreSQL\migracao_admin.sql
 6. BD_postegreSQL\migracao_evolucao_checkins.sql
+7. BD_postegreSQL\migracao_planos_revisao.sql
+8. BD_postegreSQL\migracao_taco.sql
 
 Execução pelo psql:
 
@@ -201,6 +203,8 @@ Execução pelo psql:
    psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\migracao_IA.sql
    psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\migracao_admin.sql
    psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\migracao_evolucao_checkins.sql
+   psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\migracao_planos_revisao.sql
+   psql -U postgres -d Wish_Diet_app -f BD_postegreSQL\migracao_taco.sql
 
 Se o psql não estiver no PATH, use o caminho completo, normalmente:
 
@@ -215,8 +219,40 @@ Crie uma conexão com host localhost, porta 5432, banco Wish_Diet_app,
 usuário postgres e a senha do PostgreSQL. Abra cada arquivo SQL e execute-o
 na ordem indicada.
 
+As duas últimas migrações são necessárias para o fluxo atual de planos
+alimentares e para a base de conhecimento TACO. A migração TACO cria as tabelas
+de importação, alimentos, composição nutricional e seus índices.
 
-6. ARQUIVO .env DO BACKEND
+
+6. IMPORTAÇÃO E APROVAÇÃO DA BASE TACO
+---------------------------------------
+
+Depois de executar migracao_taco.sql, a importação do PDF e do CSV TACO é feita
+pelo script do backend. Os dois arquivos devem corresponder à mesma edição e o
+CSV deve conter os 597 alimentos esperados:
+
+   cd Backend
+   .\.venv\Scripts\Activate.ps1
+   python scripts\importar_taco.py --pdf "C:\caminho\taco_4_edicao.pdf" --csv "C:\caminho\Taco-4a-Edicao.csv" --edicao "4ª edição revisada e ampliada" --ano 2011
+
+O script valida a estrutura, a numeração dos alimentos, calcula os hashes dos
+arquivos e cria a importação com status pendente. A importação não fica
+disponível para a geração de planos até a aprovação de um administrador.
+
+Para aprovar pelo aplicativo:
+
+1. Promova um usuário confiável a administrador conforme a seção 14.
+2. Faça login com esse usuário.
+3. Abra Administração > Base TACO.
+4. Confira a edição, o ano e a quantidade de registros.
+5. Selecione Aprovar importação.
+
+A aprovação ativa a edição escolhida e torna seu catálogo disponível para as
+consultas do backend e para o contexto de geração dos planos. Uma nova edição
+aprovada inativa a edição TACO anteriormente aprovada.
+
+
+7. ARQUIVO .env DO BACKEND
 --------------------------
 
 O arquivo Backend\.env deve conter, no mínimo:
@@ -245,7 +281,7 @@ Regras:
 - Nunca compartilhe esse arquivo.
 
 
-7. FIREBASE E LOGIN COM GOOGLE
+8. FIREBASE E LOGIN COM GOOGLE
 ------------------------------
 
 O login Google usa Firebase/Google Cloud e o pacote:
@@ -291,7 +327,7 @@ Para APK gerado pelo EAS, use o SHA-1 do certificado do EAS, não o SHA-1 do
 debug.keystore local. Cadastre cada certificado utilizado no Firebase.
 
 
-8. ANDROID STUDIO E SDK ANDROID
+9. ANDROID STUDIO E SDK ANDROID
 -------------------------------
 
 Necessário para gerar APK Android localmente:
@@ -340,7 +376,7 @@ Se o Gradle reclamar de cache/permissão, use:
    .\gradlew.bat assembleDebug
 
 
-9. EAS BUILD (OPCIONAL)
+10. EAS BUILD (OPCIONAL)
 -----------------------
 
 O projeto possui configuração EAS para gerar APK de desenvolvimento.
@@ -356,8 +392,14 @@ Geração:
 O perfil development gera um APK interno com o Dev Client. O SHA-1 do
 certificado usado pelo EAS deve estar cadastrado no Firebase.
 
+Alterações somente em telas, serviços TypeScript ou variáveis públicas podem
+ser testadas reiniciando o Expo. Gere e instale um novo APK de desenvolvimento
+quando houver alteração de dependências nativas, plugins do app.json,
+google-services.json, pacote Android ou configuração que precise ser incorporada
+ao binário nativo.
 
-10. INICIAR O BACKEND
+
+11. INICIAR O BACKEND
 ---------------------
 
 Em um terminal:
@@ -389,7 +431,7 @@ Para testar pelo celular via Wi-Fi:
    http://IP_DO_COMPUTADOR:8000/
 
 
-11. INICIAR O EXPO
+12. INICIAR O EXPO
 ------------------
 
 Com o backend em execução, abra outro terminal na raiz:
@@ -405,7 +447,7 @@ Com Expo Go, use `npx expo start`. Para recursos nativos como Google Sign-In,
 use um APK de desenvolvimento gerado com o Dev Client, não apenas o Expo Go.
 
 
-12. TESTES E VERIFICAÇÕES
+13. TESTES E VERIFICAÇÕES
 -------------------------
 
 Lint do frontend:
@@ -419,6 +461,15 @@ Compilação do backend:
 Testes unitários básicos:
 
    pytest -q Backend\test_WishDiet.py Backend\test_payload_ia.py
+
+Testes completos:
+
+   pytest -q
+
+Os testes que usam o TestClient do FastAPI dependem do pacote httpx. Se ele
+não estiver disponível no ambiente virtual, instale-o com:
+
+   python -m pip install "httpx>=0.27.0"
 
 Verificação das tabelas principais:
 
@@ -436,7 +487,7 @@ Verificação dos dados iniciais:
    WHERE table_name = 'pacientes' AND column_name = 'dados_iniciais';
 
 
-13. ACESSO ADMINISTRATIVO
+14. ACESSO ADMINISTRATIVO
 -------------------------
 
 Depois de executar migracao_admin.sql, promova um usuário confiável:
@@ -446,8 +497,11 @@ Depois de executar migracao_admin.sql, promova um usuário confiável:
 
 Saia e entre novamente no app. O usuário será direcionado para /admin.
 
+Esse mesmo perfil é necessário para listar e aprovar importações na tela
+Administração > Base TACO.
 
-14. PROBLEMAS COMUNS
+
+15. PROBLEMAS COMUNS
 --------------------
 
 Backend não conecta:
@@ -472,6 +526,22 @@ Celular não acessa a API:
 - Reinicie o Expo com npx expo start -c.
 - Verifique o Firewall e a rede Wi-Fi.
 
+Aplicativo demora para iniciar após conectar ao backend:
+
+- A validação da sessão possui timeout de 8 segundos.
+- Confirme se o backend está acessível pela URL configurada em
+  EXPO_PUBLIC_API_URL.
+- Em caso de falha de rede ou timeout, a sessão local é preservada; uma rejeição
+  explícita de autenticação ainda encerra a sessão.
+- Reinicie o Expo com npx expo start -c depois de alterar variáveis públicas.
+
+Base TACO não aparece para os nutricionistas:
+
+- Confirme que migracao_taco.sql foi executada.
+- Confirme que o script de importação terminou sem erro.
+- Acesse Administração > Base TACO e aprove a importação pendente.
+- Somente uma importação com status aprovada fica disponível no catálogo.
+
 Migração falha:
 
 - Confirme que o banco selecionado é Wish_Diet_app.
@@ -480,7 +550,7 @@ Migração falha:
 - As migrações aditivas usam IF NOT EXISTS quando aplicável e não devem ser substituídas.
 
 
-15. EXECUÇÃO RÁPIDA DIÁRIA
+16. EXECUÇÃO RÁPIDA DIÁRIA
 --------------------------
 
 Terminal 1 - backend:

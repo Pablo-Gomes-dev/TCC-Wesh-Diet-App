@@ -37,6 +37,8 @@ from database import get_db_connection
 from extrator_pdf import extrair_texto_pdf
 from routers.ia_base import router as ia_base_router
 from routers.evolucao import router as evolucao_router
+from routers.planos import router as planos_router
+from routers.taco import router as taco_router
 from auth import (
     gerar_hash_senha,
     verificar_senha,
@@ -66,6 +68,8 @@ app.add_middleware(
 )
 app.include_router(ia_base_router)
 app.include_router(evolucao_router)
+app.include_router(planos_router)
+app.include_router(taco_router)
 
 
 # ==============================================================================

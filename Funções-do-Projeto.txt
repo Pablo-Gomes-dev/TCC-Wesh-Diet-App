@@ -1,0 +1,1016 @@
+DOCUMENTAÇÃO FUNCIONAL E TÉCNICA - WISHDIET
+============================================
+
+Objetivo
+--------
+Este documento descreve as telas, rotas, serviços, funções principais e fluxos
+do projeto WishDiet/Wesh Diet. Ele foi elaborado com base na estrutura atual do
+repositório e inclui o fluxo de autenticação, paciente, nutricionista,
+administrador, IA, exames, evolução, planos alimentares e base TACO.
+
+Data da documentação: 26/11/2026
+
+
+1. VISÃO GERAL DA ARQUITETURA
+==============================
+
+Frontend
+--------
+- React Native com Expo SDK 54.
+- Expo Router para navegação por arquivos.
+- TypeScript.
+- AsyncStorage para sessão local.
+- apiFetch para comunicação HTTP com o backend.
+
+Backend
+-------
+- Python com FastAPI.
+- PostgreSQL acessado pelo driver psycopg.
+- JWT para autenticação.
+- OpenAI Responses API para geração estruturada.
+- Pydantic para validação dos dados.
+- Armazenamento privado para PDFs de exames.
+
+Perfis de acesso
+----------------
+- Paciente: consulta seu perfil, exames, evolução e plano aprovado.
+- Nutricionista: administra pacientes vinculados, exames, evolução e planos.
+- Administrador: aprova nutricionistas e importações da base TACO.
+
+
+2. NAVEGAÇÃO E PROTEÇÃO DE ROTAS
+==================================
+
+Arquivo: app/_layout.tsx
+
+RootLayout
+----------
+Componente raiz da navegação. Instala o AuthProvider, seleciona o tema claro
+ou escuro, configura a barra de status e registra as telas Stack.
+
+RootNavigation
+--------------
+Guarda central de rotas. Verifica:
+- se a sessão ainda está sendo restaurada;
+- se existe token e usuário;
+- se o usuário é administrador;
+- se o usuário é paciente;
+- se o usuário é nutricionista;
+- se o acesso está tentando entrar em um grupo de perfil incorreto.
+
+Regras principais:
+- usuário sem sessão vai para /login;
+- administrador fica na área /admin;
+- paciente fica em /(paciente)/dashboard;
+- nutricionista fica em /(nutricionista)/dashboard;
+- grupos de paciente e nutricionista não podem ser acessados pelo perfil oposto.
+
+AuthContext
+-----------
+Arquivo: contexts/AuthContext.tsx
+
+AuthProvider
+Gerencia a sessão global do aplicativo.
+
+Responsabilidades:
+- recuperar token e usuário do AsyncStorage;
+- carregar a sessão local imediatamente;
+- validar o token em /auth/me;
+- aplicar timeout de 8 segundos na validação;
+- manter a sessão local quando o backend está indisponível;
+- limpar a sessão quando o backend rejeita explicitamente o token;
+- registrar comportamento global para respostas HTTP 401.
+
+useAuth
+Hook usado pelas telas para acessar:
+- usuario;
+- token;
+- isLoading;
+- signIn;
+- signOut.
+
+signIn
+Salva token e usuário no AsyncStorage e atualiza o estado global.
+
+signOut
+Remove token e usuário do AsyncStorage e limpa o estado global.
+
+
+3. SERVIÇO HTTP DO FRONTEND
+============================
+
+Arquivo: services/api.ts
+
+API_BASE_URL
+Define o endereço da API. Usa EXPO_PUBLIC_API_URL ou um endereço padrão.
+
+ApiError
+Classe de erro com status HTTP e código opcional.
+
+definirAoSessaoExpirar
+Registra a função chamada quando uma requisição retorna 401.
+
+apiFetch
+Função HTTP centralizada.
+
+Responsabilidades:
+- recuperar token do AsyncStorage;
+- enviar Authorization Bearer;
+- definir Content-Type JSON quando necessário;
+- serializar o body;
+- converter resposta para JSON;
+- normalizar mensagens de erro;
+- disparar o encerramento da sessão em 401.
+
+
+4. TELAS PÚBLICAS
+==================
+
+app/login.tsx - Login
+--------------------
+LoginScreen
+Permite autenticação por e-mail e senha e login com Google.
+
+Funções principais:
+- validar campos de login;
+- chamar /auth/login;
+- armazenar a sessão com signIn;
+- redirecionar conforme tipo_usuario;
+- iniciar fluxo de autenticação Google;
+- tratar erros de credencial e rede.
+
+Destino após login:
+- paciente: /(paciente)/dashboard;
+- nutricionista: /(nutricionista)/dashboard;
+- administrador: /admin.
+
+app/cadastro.tsx - Cadastro
+--------------------------
+CadastroScreen
+Cria contas de paciente ou nutricionista.
+
+Funções principais:
+- validar nome, e-mail e senha;
+- permitir seleção do papel;
+- exigir CRN para nutricionista;
+- chamar /auth/cadastro;
+- salvar a sessão retornada;
+- redirecionar para o dashboard do perfil.
+
+app/escolher-papel.tsx - Escolha de perfil
+-------------------------------------------
+EscolherPapelScreen
+Permite selecionar paciente ou nutricionista durante fluxos de autenticação.
+Para nutricionista, coleta o CRN e envia os dados ao backend.
+
+app/home.tsx - Home legada
+--------------------------
+HomeScreen
+Tela de apresentação e atalhos gerais. Exibe conteúdo diferente para paciente
+e nutricionista e mantém rotas antigas de navegação.
+
+app/Mensagens.tsx - Mensagens
+-----------------------------
+MensagensScreen
+Tela destinada à comunicação entre paciente e nutricionista. Atualmente é uma
+tela simples de apresentação do canal de mensagens.
+
+
+5. TELAS DO ADMINISTRADOR
+==========================
+
+app/admin.tsx - Administração geral
+-----------------------------------
+AdminScreen
+Lista nutricionistas pendentes de aprovação.
+
+Funções principais:
+- carregar /admin/nutricionistas-pendentes;
+- aprovar cadastro;
+- rejeitar cadastro;
+- remover item da lista após decisão;
+- sair da sessão;
+- abrir a tela da base TACO.
+
+app/admin/taco.tsx - Aprovação da base TACO
+-------------------------------------------
+AdminTacoScreen
+Tela exclusiva para administradores.
+
+Funções principais:
+- carregar /admin/taco/importacoes;
+- listar edição, ano, quantidade de registros e status;
+- confirmar aprovação da importação;
+- chamar PATCH /admin/taco/importacoes/{id}/status;
+- atualizar a lista após aprovação;
+- recarregar a lista por pull-to-refresh.
+
+Regra de segurança:
+- a interface verifica is_admin;
+- o backend também exige exigir_admin;
+- a proteção real não depende apenas da tela.
+
+
+6. LAYOUT DO PACIENTE
+======================
+
+Arquivo: app/(paciente)/_layout.tsx
+
+PacienteTabLayout
+Configura as abas inferiores do paciente:
+- Início;
+- Exames;
+- Plano;
+- Evolução;
+- Perfil.
+
+Também registra telas acessíveis por navegação, mas ocultas da barra de abas:
+- check-ins;
+- relatório;
+- análise IA.
+
+Arquivos de rota em app/(paciente)
+----------------------------------
+- dashboard.tsx: encaminha para DashboardPaciente.
+- exames.tsx: encaminha para Exames.
+- plano.tsx: encaminha para ConsultaPlanoAlimentar.
+- evolucao.tsx: encaminha para Evolucao.
+- perfil.tsx: encaminha para MeuPerfil.
+- check-ins.tsx: encaminha para Check-ins.
+- relatorio.tsx: encaminha para ConsultaRelatorio.
+
+
+7. TELAS DO PACIENTE
+=====================
+
+app/(tabs)/Pacientes/DashboardPaciente.tsx
+------------------------------------------
+DashboardPaciente / PacientesScreen
+Exibe resumo da área do paciente e atalhos.
+
+Atalhos principais:
+- plano alimentar;
+- exames;
+- evolução;
+- perfil;
+- relatórios.
+
+app/(tabs)/Pacientes/MeuPerfil.tsx
+----------------------------------
+DetalhesDoPacienteScreen
+Cadastro e edição dos dados do paciente.
+
+Dados tratados:
+- nome;
+- idade;
+- peso;
+- altura;
+- objetivo;
+- restrições alimentares;
+- observações.
+
+Funções principais:
+- carregar dados salvos localmente;
+- calcular e classificar IMC;
+- editar campos;
+- persistir dados no AsyncStorage;
+- enviar perfil inicial quando aplicável.
+
+app/(tabs)/Pacientes/Evolucao.tsx
+---------------------------------
+EvolucaoScreen
+Registra check-ins do paciente e exibe o histórico.
+
+Campos do check-in:
+- peso;
+- cintura;
+- quadril;
+- adesão ao plano;
+- energia;
+- sono;
+- dificuldades;
+- observações.
+
+Funções principais:
+- carregar /paciente/evolucao;
+- sincronizar o perfil inicial;
+- enviar /paciente/evolucao/checkins;
+- mostrar resumo da análise;
+- mostrar se a análise usou IA ou fallback local;
+- limpar formulário após sucesso;
+- exibir histórico de check-ins.
+
+app/(tabs)/Pacientes/Check-ins.tsx
+----------------------------------
+TesteScreen
+Tela auxiliar/legada de check-ins. Deve ser considerada uma rota de apoio
+enquanto a tela principal de evolução concentra o fluxo atual.
+
+app/(tabs)/Pacientes/Exames.tsx
+-------------------------------
+Exames
+Tela de envio e acompanhamento de exames laboratoriais.
+
+Funções principais:
+- selecionar PDF;
+- enviar arquivo ao backend;
+- consultar /exames/meus;
+- acompanhar processamento;
+- abrir relatório disponível;
+- navegar para avaliação de relatório;
+- exibir status pendente, aprovado ou rejeitado.
+
+app/(tabs)/Pacientes/ConsultaRelatorio.tsx
+------------------------------------------
+ConsultaRelatorioPacienteScreen
+Exibe relatórios de exames liberados pelo nutricionista.
+
+Funções principais:
+- carregar relatórios do paciente;
+- filtrar aprovados e pendentes;
+- consultar detalhes de relatório;
+- abrir relatório aprovado;
+- exibir aviso quando o relatório ainda está em revisão;
+- impedir apresentação de relatório não aprovado.
+
+app/(tabs)/Pacientes/ConsultaPlanoAlimentar.tsx
+------------------------------------------------
+ConsultaPlanoAlimentar
+Consulta o plano aprovado do paciente em /paciente/meu-plano.
+
+Comportamento:
+- mostra carregamento;
+- mostra mensagem quando não existe plano aprovado;
+- exibe objetivo nutricional;
+- exibe refeições e horários;
+- exibe alimentos e quantidades;
+- exibe duas substituições com justificativas;
+- permite atualização por pull-to-refresh.
+
+O paciente não recebe rascunhos ou planos em revisão.
+
+
+8. LAYOUT DO NUTRICIONISTA
+===========================
+
+Arquivo: app/(nutricionista)/_layout.tsx
+
+NutricionistaTabLayout
+Configura as abas:
+- Início;
+- Pacientes;
+- Exames;
+- IA;
+- Relatório.
+
+Telas ocultas da barra de abas:
+- plano;
+- evolução;
+- adicionar-paciente.
+
+Rotas em app/(nutricionista)
+----------------------------
+- dashboard.tsx: DashboardNutricionistaScreen.
+- pacientes.tsx: PacientesNutricionistaScreen.
+- exames.tsx: Exames.
+- plano.tsx: GeraPlanoAlimentar.
+- evolucao.tsx: EvolucaoNutricionistaScreen.
+- relatorio.tsx: RelatorioNutricionistaScreen.
+- analise-ia.tsx: Analise_IA.
+- adicionar-paciente.tsx: AdicionarPaciente.
+
+
+9. TELAS DO NUTRICIONISTA
+==========================
+
+app/(nutricionista)/dashboard.tsx
+---------------------------------
+DashboardNutricionistaScreen
+Painel principal do nutricionista.
+
+Funções principais:
+- carregar quantidade de pacientes;
+- carregar quantidade de relatórios;
+- exibir resumo do atendimento;
+- abrir pacientes;
+- abrir análise IA;
+- abrir exames;
+- abrir gerador de plano;
+- abrir evolução;
+- abrir relatórios.
+
+app/(tabs)/nutricionista/DashboardNutricionista.tsx
+---------------------------------------------------
+NutricionistaScreen
+Dashboard alternativo/legado com atalhos para pacientes, IA, exames, plano,
+evolução e relatório.
+
+app/(nutricionista)/pacientes.tsx
+---------------------------------
+PacientesNutricionistaScreen
+Lista pacientes vinculados ao nutricionista.
+
+Funções principais:
+- carregar código de vínculo;
+- carregar /nutricionista/meus-pacientes;
+- exibir pacientes ativos;
+- abrir dados e análise do paciente;
+- desvincular paciente;
+- mostrar instruções de vínculo.
+
+app/(tabs)/nutricionista/Pacientes.tsx
+--------------------------------------
+Componente de encaminhamento para a tela de pacientes do nutricionista.
+
+app/(tabs)/nutricionista/AdicionarPaciente.tsx
+-----------------------------------------------
+DetalhesDoPacienteScreen
+Tela auxiliar para visualizar ou editar dados de um paciente.
+
+Funções principais:
+- carregar dados locais;
+- editar nome, idade, peso, altura, objetivo, restrições e observações;
+- salvar dados no AsyncStorage;
+- exibir confirmação de salvamento.
+
+Observação: o fluxo principal de vínculo usa a tela de pacientes e o código de
+vínculo do backend.
+
+app/(tabs)/nutricionista/Analise_IA.tsx
+--------------------------------------
+AssistenteIAScreen
+Tela de apoio para análise de dados do paciente por IA.
+
+Funções principais:
+- carregar paciente local;
+- enviar dados para /analise;
+- mostrar análise estruturada;
+- apresentar orientações gerais;
+- exibir dúvidas relacionadas ao plano.
+
+app/(tabs)/nutricionista/Exames.tsx
+-----------------------------------
+Exames
+Tela de exames disponíveis para pacientes vinculados.
+
+Funções principais:
+- consultar exames autorizados;
+- filtrar por paciente/status;
+- visualizar dados dos exames;
+- abrir relatório;
+- encaminhar para revisão profissional.
+
+app/(tabs)/nutricionista/Relatorio.tsx
+--------------------------------------
+RelatorioNutricionistaScreen
+Lista relatórios de exames e permite revisão profissional.
+
+Funções principais:
+- carregar /relatorios/nutricionista;
+- filtrar pendentes, aprovados e sem relatório;
+- abrir relatório completo;
+- aprovar relatório;
+- rejeitar relatório;
+- liberar relatório aprovado para o paciente;
+- mostrar modelo, dados extraídos e observações.
+
+app/(tabs)/nutricionista/Evolucao.tsx
+-------------------------------------
+EvolucaoNutricionistaScreen
+Lista análises de evolução dos pacientes vinculados.
+
+Funções principais:
+- carregar /nutricionista/evolucao;
+- pesquisar por paciente;
+- filtrar evolução, estabilidade e involução;
+- abrir /nutricionista/evolucao/{checkin_id};
+- exibir comparação de peso e adesão;
+- exibir resumo, pontos positivos, atenção e observações.
+
+app/(tabs)/nutricionista/GeraPlanoAlimentar.tsx
+------------------------------------------------
+GeraPlanoAlimentar
+Tela de criação, revisão e aprovação de planos alimentares.
+
+Fluxo:
+1. Lista pacientes vinculados.
+2. Permite buscar paciente por nome.
+3. Carrega o contexto clínico.
+4. Mostra objetivo, restrições, peso, adesão e observações.
+5. Solicita geração do plano.
+6. Salva o resultado como rascunho.
+7. Exibe refeições e substituições.
+8. Permite editar o plano estruturado.
+9. Permite solicitar revisão.
+10. Permite aprovar e liberar para o paciente.
+
+Rotas usadas:
+- GET /nutricionista/planos/pacientes;
+- GET /nutricionista/planos/pacientes/{id}/contexto;
+- POST /nutricionista/planos/gerar;
+- PATCH /nutricionista/planos/{id};
+- POST /nutricionista/planos/{id}/revisao;
+- POST /nutricionista/planos/{id}/aprovar.
+
+Estados do plano:
+- rascunho;
+- revisao_solicitada;
+- aprovado;
+- arquivado.
+
+Regras importantes:
+- somente pacientes vinculados aparecem;
+- consentimento de IA é exigido;
+- o plano precisa ter duas substituições por refeição;
+- o plano precisa de aprovação profissional;
+- o paciente só visualiza o plano aprovado.
+
+
+10. BACKEND PRINCIPAL
+======================
+
+Arquivo: Backend/main.py
+
+inicio
+Retorna status básico de funcionamento da API.
+
+cadastrar_usuario
+Cria usuário paciente ou nutricionista, aplicando validações de papel e CRN.
+
+login_usuario
+Autentica e-mail/senha, cria JWT e retorna dados do usuário.
+
+login_google
+Valida credencial Google e cria ou recupera usuário.
+
+obter_perfil_logado
+Retorna dados do usuário autenticado.
+
+listar_nutricionistas_pendentes
+Lista cadastros profissionais pendentes para administrador.
+
+atualizar_status_nutricionista
+Aprova ou rejeita cadastro profissional.
+
+espaco_do_paciente
+Retorna resumo do espaço do paciente.
+
+painel_do_nutricionista
+Retorna resumo do painel profissional.
+
+consultar_dados_clinicos_paciente
+Consulta dados clínicos com regras de propriedade e vínculo ativo.
+
+obter_codigo_vinculo_nutricionista
+Retorna o código usado para vincular pacientes.
+
+vincular_paciente_por_codigo
+Cria vínculo entre paciente e nutricionista usando código.
+
+consultar_meu_nutricionista
+Retorna o nutricionista vinculado ao paciente.
+
+listar_meus_pacientes
+Lista pacientes ativos do nutricionista autenticado.
+
+desvincular_paciente_por_nutricionista
+Desativa vínculo profissional-paciente.
+
+desvincular_nutricionista_por_paciente
+Permite ao paciente desfazer seu vínculo.
+
+analisar_paciente
+Gera uma análise estruturada básica dos dados do paciente, respeitando o papel
+e o vínculo autorizado.
+
+analisar_exame
+Recebe PDF, valida autenticação, papel, vínculo, tamanho e assinatura do arquivo,
+extrai texto, salva arquivo privado e registra exame.
+
+listar_meus_exames
+Lista exames conforme o papel do usuário.
+
+visualizar_pdf_exame
+Entrega PDF somente para usuário autorizado.
+
+visualizar_relatorio_exame
+Entrega relatório conforme regras de aprovação e propriedade.
+
+gerar_relatorio_exame_ia
+Extrai texto do exame, gera relatório estruturado com IA ou fallback e salva como
+pendente de revisão profissional.
+
+revisar_relatorio_exame
+Aprova ou rejeita relatório de exame e registra o profissional responsável.
+
+listar_relatorios_nutricionista
+Lista relatórios dos pacientes vinculados ao nutricionista.
+
+
+11. AUTENTICAÇÃO E AUTORIZAÇÃO DO BACKEND
+==========================================
+
+Arquivo: Backend/auth.py
+
+gerar_hash_senha
+Cria hash bcrypt da senha.
+
+verificar_senha
+Compara senha informada com hash armazenado.
+
+criar_token_acesso
+Cria JWT com usuário, e-mail, papel, emissão e expiração.
+
+decodificar_token_acesso
+Valida assinatura, algoritmo, expiração e identificador numérico.
+
+validar_credencial_google
+Valida assinatura, emissor, audiência e e-mail verificado do Google.
+
+obter_usuario_atual
+Lê Bearer token, recupera o usuário no PostgreSQL e valida conta ativa.
+
+exigir_paciente
+Permite apenas usuários com tipo paciente.
+
+exigir_nutricionista
+Permite somente nutricionistas aprovados.
+
+exigir_admin
+Permite somente usuários marcados como administradores.
+
+verificar_vinculo_nutricionista_paciente
+Confirma vínculo ativo entre nutricionista e paciente.
+
+
+12. ROTEADOR DE EVOLUÇÃO
+=========================
+
+Arquivo: Backend/routers/evolucao.py
+
+PerfilInicialRequest
+Valida dados iniciais do paciente.
+
+CheckinRequest
+Valida peso, medidas, adesão, energia, sono e observações.
+
+_paciente_id
+Localiza o registro de paciente associado ao usuário.
+
+_medidas
+Converte medidas do check-in em objeto JSON.
+
+_numero
+Converte valores numéricos com segurança.
+
+_diferencas
+Calcula diferenças entre check-ins.
+
+_classificacao_local
+Classifica evolução, estabilidade ou involução com base no objetivo e adesão.
+
+_fallback
+Gera análise local quando a IA não está disponível.
+
+salvar_perfil_inicial
+Atualiza objetivo, restrições e observações no perfil do paciente.
+
+listar_evolucao
+Retorna perfil inicial e histórico do paciente.
+
+criar_checkin
+Salva check-in, calcula diferenças, executa análise local ou IA e salva resultado.
+
+listar_evolucoes_nutricionista
+Lista análises finalizadas de pacientes vinculados.
+
+detalhar_evolucao_nutricionista
+Retorna comparação detalhada de um check-in autorizado.
+
+
+13. ROTEADOR DE PLANOS ALIMENTARES
+===================================
+
+Arquivo: Backend/routers/planos.py
+
+validar_conteudo_plano
+Regra central de validação. Exige:
+- revisão profissional marcada;
+- ao menos uma refeição;
+- exatamente duas substituições por refeição.
+
+_contexto
+Busca dados do paciente, valida vínculo ativo e recupera o último check-in.
+
+listar_pacientes_plano
+Lista apenas pacientes vinculados ao nutricionista.
+
+contexto_plano
+Retorna contexto clínico antes da geração.
+
+gerar_plano
+Exige consentimento de IA, recupera contexto e catálogo TACO aprovado, chama a
+IA com schema estruturado e salva o plano como rascunho.
+
+obter_plano_nutricionista
+Consulta plano pertencente ao nutricionista.
+
+editar_plano
+Permite editar somente rascunho ou plano em revisão. Após edição, retorna para
+rascunho e exige nova aprovação.
+
+solicitar_revisao
+Altera o plano para revisao_solicitada e registra observação.
+
+aprovar_plano
+Valida estrutura, arquiva plano aprovado anterior e aprova o novo plano.
+
+meu_plano
+Retorna somente o plano aprovado do paciente autenticado.
+
+
+14. ROTEADOR TACO
+==================
+
+Arquivo: Backend/routers/taco.py
+
+catalogo_aprovado
+Recupera alimentos da importação TACO aprovada para uso no contexto da IA.
+
+listar_importacoes_taco
+Lista importações para administradores.
+
+alterar_status_taco
+Aprova, rejeita ou inativa uma importação. Ao aprovar uma nova versão, a versão
+anterior aprovada é marcada como inativa.
+
+buscar_alimentos_taco
+Permite ao nutricionista pesquisar alimentos aprovados por nome e consultar
+energia, proteína, carboidratos, lipídios e fibras.
+
+
+15. BASE DE CONHECIMENTO TACO
+==============================
+
+Arquivo: Backend/scripts/importar_taco.py
+
+sha256
+Calcula hash SHA-256 de arquivo para rastreabilidade.
+
+numero
+Converte número com vírgula decimal. Mantém NA, Tr e * como ausência numérica.
+
+ler_csv
+Lê o CSV TACO em cp1252, identifica categorias, valida 597 registros e códigos
+de 1 a 597, normaliza valores e preserva os valores brutos.
+
+importar
+Cria importação pendente, grava alimentos, composição nutricional, hashes e
+metadados dos arquivos.
+
+Arquivo: BD_postegreSQL/migracao_taco.sql
+
+Cria:
+- taco_importacoes;
+- taco_alimentos;
+- taco_composicao;
+- índices por nome e categoria;
+- controle de versão e aprovação.
+
+Importação atual
+----------------
+- Importação ID: 1.
+- Edição: TACO 4ª edição revisada e ampliada.
+- Ano: 2011.
+- Registros: 597.
+- Status atual: pendente.
+
+A base só deve ser usada como fonte ativa depois da aprovação administrativa.
+
+
+16. SERVIÇOS DE INTELIGÊNCIA ARTIFICIAL
+=========================================
+
+Arquivo: Backend/services/openai_service.py
+
+Funcionalidade
+Enumeração das funções de IA: plano, exame e check-in.
+
+ConfigModelo
+Define modelo, limite de saída e preços configuráveis por ambiente.
+
+IAIndisponivelError
+Erro seguro para indisponibilidade, credencial, limite ou resposta inválida.
+
+_obter_cliente
+Cria cliente OpenAI usando OPENAI_API_KEY.
+
+modelo_da_funcionalidade
+Seleciona modelo por variável de ambiente.
+
+estimar_custo_usd
+Estima custo com base nos tokens de entrada e saída.
+
+_classificar_erro
+Classifica erros da API sem expor detalhes sensíveis.
+
+_registrar_uso
+Registra consumo de IA sem guardar conteúdo clínico.
+
+gerar_estruturado
+Chama Responses API com instructions, input JSON, schema Pydantic, store=False
+e registro de uso.
+
+Arquivo: Backend/services/prompts.py
+
+INSTRUCOES_PLANO
+Determina regras do plano: português, restrições, duas substituições por refeição,
+justificativa, equivalência e revisão profissional.
+
+INSTRUCOES_EXAME
+Orienta interpretação cautelosa de biomarcadores e exige revisão profissional.
+
+INSTRUCOES_CHECKIN
+Orienta classificação da evolução entre check-ins.
+
+Arquivo: Backend/services/payload_ia.py
+
+higienizar_texto
+Limita e remove informações sensíveis de textos.
+
+calcular_idade
+Calcula idade a partir de data de nascimento.
+
+lista_restricoes
+Converte texto de restrições em lista segura.
+
+montar_payload_paciente
+Monta payload minimizado para IA, removendo identificadores desnecessários.
+
+
+17. CONSENTIMENTO E AUDITORIA
+==============================
+
+Arquivo: Backend/services/consentimento.py
+
+consentimento_vigente
+Consulta o consentimento mais recente e verifica versão do texto.
+
+registrar_consentimento
+Registra aceite ou revogação no banco.
+
+paciente_consentiu_ia
+Verifica consentimento usando o paciente relacionado ao usuário.
+
+exigir_consentimento_ia
+Bloqueia chamadas de IA sem consentimento vigente.
+
+Arquivo: Backend/services/auditoria.py
+
+registrar
+Grava ação, recurso, usuário, resultado e identificador para rastreabilidade.
+
+
+18. SCHEMAS PRINCIPAIS
+======================
+
+Backend/schemas/plano_schema.py
+-------------------------------
+ItemAlimento: alimento, quantidade, unidade e observação.
+
+Substituicao: alimento original, substituto, quantidade, unidade, justificativa
+e equivalência nutricional.
+
+Refeicao: nome, horário, itens e duas substituições.
+
+PlanoAlimentar: objetivo, refeições, observações, restrições consideradas e
+obrigação de revisão profissional.
+
+Backend/schemas/checkin_schema.py
+---------------------------------
+Define o formato estruturado da análise de evolução.
+
+Backend/schemas/exame_schema.py
+-------------------------------
+Define resultados, classificações, observações e pontos de atenção de exames.
+
+
+19. BANCO E MIGRAÇÕES
+=====================
+
+Backend/database.py
+-------------------
+obter_config_banco
+Lê host, porta, banco, usuário e senha do ambiente.
+
+get_db_connection
+Abre conexão PostgreSQL, confirma transações e executa rollback em erro.
+
+Migrações principais
+--------------------
+- BD_wish_diet_app.sql: estrutura inicial.
+- migracao_auth_google.sql: autenticação e Google.
+- migracao_admin.sql: flag administrativa.
+- migracao_IA.sql: planos, check-ins, auditoria, consentimento e uso de IA.
+- migracao_planos_revisao.sql: revisão de planos.
+- migracao_taco.sql: base TACO.
+
+
+20. TESTES
+==========
+
+Os testes ficam em Backend/.
+
+test_auth_roles.py
+Testa cadastro, login, papéis e bloqueio de rotas.
+
+test_seguranca_auth.py
+Testa JWT, expiração, assinatura, algoritmo e Google.
+
+test_vinculo_codigo.py
+Testa vínculo entre paciente e nutricionista.
+
+test_consentimento_auditoria.py
+Testa consentimento, revogação e auditoria.
+
+test_openai_service.py
+Testa cliente simulado, schema, tokens, custos e erros da OpenAI.
+
+test_planos.py
+Testa exatamente duas substituições, revisão profissional e schema do plano.
+
+test_importar_taco.py
+Testa conversão numérica e validação dos 597 alimentos TACO.
+
+test_extracao_pdf.py
+Testa extração, PDFs inválidos, arquivos corrompidos, limite e endpoints.
+
+test_correcoes_pontuais.py
+Testa regras de análise, upload, permissões e isolamento de arquivos.
+
+test_WishDiet.py
+Testa funções auxiliares de IMC, restrições e análise.
+
+pytest.ini
+Configura Backend como caminho dos testes e usa .pytest-temp como diretório
+temporário.
+
+
+21. REGRAS DE NEGÓCIO IMPORTANTES
+==================================
+
+- Dados de saúde só podem ser acessados pelo paciente ou nutricionista vinculado.
+- Nutricionista precisa estar aprovado para funções clínicas.
+- Administrador controla aprovações administrativas e da base TACO.
+- Consentimento do paciente é obrigatório para processamento por IA.
+- IA gera propostas, não decisões clínicas definitivas.
+- Plano nasce como rascunho.
+- Plano precisa de duas substituições por refeição.
+- Nutricionista deve revisar e aprovar.
+- Paciente recebe somente plano aprovado.
+- Relatório de exame só fica disponível após aprovação profissional.
+- Base TACO importada fica pendente até aprovação.
+- Versões antigas da TACO devem permanecer rastreáveis e podem ser inativadas.
+- Valores TACO devem ser usados como dados estruturados do backend, não como texto
+  integral enviado ao prompt.
+
+
+22. LIMITAÇÕES ATUAIS IMPORTANTES
+==================================
+
+- A base TACO já foi importada, mas a importação ID 1 está pendente.
+- O catálogo aprovado é enviado ao contexto da geração, mas os cálculos
+  nutricionais determinísticos completos ainda precisam ser ampliados.
+- A tela de edição do plano utiliza edição do conteúdo estruturado em JSON.
+- A tela administrativa TACO é simples e não possui upload de arquivos; o importador
+  é executado pelo backend/terminal.
+- O fluxo de mensagens ainda é básico.
+- Algumas telas possuem componentes legados/duplicados mantidos por compatibilidade.
+
+
+23. FLUXOS PRINCIPAIS RESUMIDOS
+================================
+
+Login:
+usuário informa credenciais → backend valida → JWT → sessão local → guarda de rotas.
+
+Vínculo:
+nutricionista fornece código → paciente informa código → backend cria vínculo ativo.
+
+Evolução:
+paciente envia check-in → backend calcula diferenças → IA ou fallback local →
+histórico → nutricionista consulta.
+
+Exame:
+paciente envia PDF → backend valida arquivo e autorização → extrai texto →
+IA gera relatório → nutricionista revisa → paciente visualiza se aprovado.
+
+Plano:
+nutricionista seleciona paciente → contexto clínico → catálogo TACO aprovado →
+IA gera rascunho → nutricionista edita ou solicita revisão → aprova → paciente visualiza.
+
+TACO:
+CSV validado → importação pendente → administrador aprova → catálogo fica disponível
+para consultas profissionais e contexto de geração.
+
+FIM DA DOCUMENTAÇÃO

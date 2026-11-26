@@ -1,70 +1,24 @@
-// ARQUIVO DESTINADO A GERAR E A EDITAR O PLANO ALIMENTAR DO PACIENTE E LISTANDO AS OPCOES DE SUBSTIUIÇÃO DE ALIMENTOS.
+import { apiFetch } from "@/services/api";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { StyleSheet, Text, View } from "react-native";
+type Paciente={id:number;nome:string;email:string}; type Contexto={paciente_id:number;nome:string;objetivo?:string;restricoes?:string;observacoes?:string;dados_iniciais:any;ultima_evolucao?:any};
+type Plano={id:number;status:string;conteudo:any;observacao_revisao?:string;contexto_geracao?:any};
 
-export default function alimentacaoScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Plano alimentar</Text>
-
-      <Text style={styles.subtitle}>Seu plano alimentar aparecerá aqui.</Text>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Café da manhã</Text>
-        <Text style={styles.cardText}>
-          Refeição recomendada pelo seu plano.
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Almoço</Text>
-        <Text style={styles.cardText}>
-          Refeição recomendada pelo seu plano.
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Jantar</Text>
-        <Text style={styles.cardText}>
-          Refeição recomendada pelo seu plano.
-        </Text>
-      </View>
-    </View>
-  );
+export default function GeraPlanoAlimentar(){
+ const [pacientes,setPacientes]=useState<Paciente[]>([]); const [paciente,setPaciente]=useState<Contexto|null>(null); const [plano,setPlano]=useState<Plano|null>(null); const [busca,setBusca]=useState(""); const [carregando,setCarregando]=useState(true); const [processando,setProcessando]=useState(false); const [observacao,setObservacao]=useState(""); const [editando,setEditando]=useState(false); const [textoEdicao,setTextoEdicao]=useState("");
+ useEffect(()=>{apiFetch<{pacientes:Paciente[]}>("/nutricionista/planos/pacientes").then(r=>setPacientes(r.pacientes||[])).catch(e=>Alert.alert("Planos",e.message)).finally(()=>setCarregando(false));},[]);
+ const selecionar=async(id:number)=>{try{setProcessando(true);setPaciente(await apiFetch<Contexto>(`/nutricionista/planos/pacientes/${id}/contexto`));setPlano(null);}catch(e:any){Alert.alert("Paciente",e.message);}finally{setProcessando(false);}};
+ const gerar=async()=>{if(!paciente)return;try{setProcessando(true);const r=await apiFetch<Plano>("/nutricionista/planos/gerar",{method:"POST",body:{paciente_id:paciente.paciente_id}});setPlano(r);Alert.alert("Plano gerado","O plano foi salvo como rascunho para sua análise profissional.");}catch(e:any){Alert.alert("Geração",e.message);}finally{setProcessando(false);}};
+ const aprovar=async()=>{if(!plano)return;try{setProcessando(true);await apiFetch(`/nutricionista/planos/${plano.id}/aprovar`,{method:"POST"});setPlano({...plano,status:"aprovado"});Alert.alert("Plano aprovado","O plano já está disponível para o paciente.");}catch(e:any){Alert.alert("Aprovação",e.message);}finally{setProcessando(false);}};
+ const revisar=async()=>{if(!plano||observacao.trim().length<3){Alert.alert("Revisão","Informe o que precisa ser alterado.");return;}try{setProcessando(true);await apiFetch(`/nutricionista/planos/${plano.id}/revisao`,{method:"POST",body:{observacao:observacao.trim()}});setPlano({...plano,status:"revisao_solicitada",observacao_revisao:observacao.trim()});setObservacao("");}catch(e:any){Alert.alert("Revisão",e.message);}finally{setProcessando(false);}};
+ const iniciarEdicao=()=>{if(plano){setTextoEdicao(JSON.stringify(plano.conteudo,null,2));setEditando(true);}};
+ const salvarEdicao=async()=>{if(!plano)return;try{const conteudo=JSON.parse(textoEdicao);setProcessando(true);const r=await apiFetch<Plano>(`/nutricionista/planos/${plano.id}`,{method:"PATCH",body:{conteudo}});setPlano({...plano,...r,conteudo:r.conteudo});setEditando(false);Alert.alert("Plano atualizado","O plano voltou para rascunho e precisa ser aprovado novamente.");}catch(e:any){Alert.alert("Edição","Informe um JSON válido e mantenha exatamente duas substituições por refeição.");}finally{setProcessando(false);}};
+ const refeicoes=plano?.conteudo?.refeicoes||[];
+ return <ScrollView style={styles.container} contentContainerStyle={styles.content}><Text style={styles.title}>Plano alimentar</Text><Text style={styles.subtitle}>Selecione um paciente vinculado e confira os dados antes da geração.</Text>
+  <Text style={styles.section}>Paciente</Text><TextInput style={styles.input} placeholder="Buscar paciente..." value={busca} onChangeText={setBusca}/>{carregando?<ActivityIndicator color="#2562EB"/>:pacientes.filter(p=>p.nome.toLowerCase().includes(busca.toLowerCase())).map(p=><Pressable key={p.id} style={[styles.patient, paciente?.paciente_id===p.id&&styles.selected]} onPress={()=>selecionar(p.id)}><Text style={styles.patientName}>{p.nome}</Text><Text style={styles.muted}>{p.email}</Text></Pressable>)}
+  {paciente&&<><Text style={styles.section}>Conferência clínica</Text><View style={styles.card}><Text style={styles.bold}>{paciente.nome}</Text><Text>Objetivo: {paciente.objetivo||"Não informado"}</Text><Text>Restrições: {paciente.restricoes||"Nenhuma informada"}</Text><Text>Peso atual: {paciente.ultima_evolucao?.peso_kg?`${paciente.ultima_evolucao.peso_kg} kg`:(paciente.dados_iniciais?.peso?`${paciente.dados_iniciais.peso} kg`:"Não informado")}</Text><Text>Adesão: {paciente.ultima_evolucao?.adesao_percentual??"Não informada"}%</Text>{paciente.ultima_evolucao?.dificuldades&&<Text>Dificuldades: {paciente.ultima_evolucao.dificuldades}</Text>}{paciente.ultima_evolucao?.observacoes&&<Text>Observações: {paciente.ultima_evolucao.observacoes}</Text>}</View><Pressable style={styles.button} onPress={gerar} disabled={processando}>{processando?<ActivityIndicator color="#FFF"/>:<Text style={styles.buttonText}>Confirmar dados e gerar plano</Text>}</Pressable></>}
+  {plano&&<><Text style={styles.section}>Análise profissional</Text><View style={styles.status}><Text style={styles.bold}>Status: {plano.status}</Text>{plano.observacao_revisao&&<Text>Alterações: {plano.observacao_revisao}</Text>}</View>{editando?<><Text style={styles.muted}>Edite o conteúdo estruturado. Mantenha duas substituições em cada refeição.</Text><TextInput style={[styles.input,styles.jsonEditor]} value={textoEdicao} onChangeText={setTextoEdicao} multiline autoCapitalize="none"/><Pressable style={styles.button} onPress={salvarEdicao} disabled={processando}><Text style={styles.buttonText}>Salvar edição</Text></Pressable><Pressable style={styles.secondary} onPress={()=>setEditando(false)}><Text style={styles.secondaryText}>Cancelar</Text></Pressable></>:<><Text style={styles.planGoal}>Objetivo: {plano.conteudo?.objetivo_nutricional}</Text>{refeicoes.map((r:any,i:number)=><View style={styles.card} key={i}><Text style={styles.meal}>{r.nome}{r.horario_sugerido?` · ${r.horario_sugerido}`:""}</Text>{(r.itens||[]).map((x:any,j:number)=><Text key={j}>• {x.alimento} — {x.quantidade} {x.unidade}</Text>)}<Text style={styles.subTitle}>Substituições</Text>{(r.substituicoes||[]).map((s:any,j:number)=><Text style={styles.small} key={j}>{j+1}. {s.alimento_original} → {s.alimento_substituto} ({s.quantidade_substituto} {s.unidade_substituto}) — {s.justificativa} Equivalência: {s.equivalencia_nutricional}</Text>)}</View>)}{plano.status!=="aprovado"&&<><Pressable style={styles.secondary} onPress={iniciarEdicao}><Text style={styles.secondaryText}>Editar plano</Text></Pressable><TextInput style={[styles.input,styles.textarea]} placeholder="Peça alterações no plano..." value={observacao} onChangeText={setObservacao} multiline/><Pressable style={styles.secondary} onPress={revisar} disabled={processando}><Text style={styles.secondaryText}>Solicitar alterações</Text></Pressable><Pressable style={styles.button} onPress={aprovar} disabled={processando}><Text style={styles.buttonText}>Aprovar e enviar ao paciente</Text></Pressable></>}</>}</>}
+ </ScrollView>;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    paddingTop: 60,
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: "bold",
-  },
-
-  subtitle: {
-    fontSize: 16,
-    marginTop: 10,
-    marginBottom: 30,
-  },
-
-  card: {
-    width: "100%",
-    padding: 20,
-    borderWidth: 1,
-    borderRadius: 12,
-    marginBottom: 15,
-  },
-
-  cardTitle: {
-    fontSize: 20,
-    marginTop: 8,
-  },
-
-  cardText: {
-    fontSize: 15,
-    marginTop: 8,
-  },
-});
+const styles=StyleSheet.create({container:{flex:1,backgroundColor:"#F5F7FA"},content:{padding:20,paddingTop:50,paddingBottom:50},title:{fontSize:28,fontWeight:"800",color:"#1F2937"},subtitle:{color:"#6B7280",lineHeight:20,marginTop:8},section:{fontSize:20,fontWeight:"700",marginTop:22,marginBottom:10,color:"#1F2937"},input:{backgroundColor:"#FFF",borderWidth:1,borderColor:"#D1D5DB",borderRadius:8,padding:12,marginBottom:10},textarea:{minHeight:80,textAlignVertical:"top"},jsonEditor:{minHeight:300,textAlignVertical:"top",fontFamily:"monospace"},patient:{backgroundColor:"#FFF",padding:14,borderRadius:10,marginBottom:8,borderWidth:1,borderColor:"#E5E7EB"},selected:{borderColor:"#2562EB",backgroundColor:"#EFF6FF"},patientName:{fontWeight:"700",color:"#1F2937"},muted:{color:"#6B7280",marginTop:4},card:{backgroundColor:"#FFF",padding:14,borderRadius:12,marginBottom:10,borderWidth:1,borderColor:"#E5E7EB",gap:5},bold:{fontWeight:"800",color:"#1F2937"},button:{backgroundColor:"#2562EB",padding:14,borderRadius:9,alignItems:"center",marginTop:12},buttonText:{color:"#FFF",fontWeight:"700"},secondary:{padding:14,borderRadius:9,alignItems:"center",borderWidth:1,borderColor:"#2562EB",marginTop:10},secondaryText:{color:"#2562EB",fontWeight:"700"},status:{padding:12,backgroundColor:"#E0F2FE",borderRadius:9},planGoal:{fontWeight:"700",marginBottom:8},meal:{fontSize:18,fontWeight:"800",color:"#1D4ED8",marginBottom:6},subTitle:{fontWeight:"700",marginTop:10},small:{fontSize:13,lineHeight:18,color:"#374151"}});

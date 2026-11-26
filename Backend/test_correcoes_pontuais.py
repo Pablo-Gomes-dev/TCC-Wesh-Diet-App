@@ -243,8 +243,10 @@ def test_upload_exame_acima_do_limite_10mb(endpoint):
         conteudo_excedente = b"%PDF" + (b"0" * (tamanho_excedente - 4))
         files = {"arquivo": ("grande.pdf", io.BytesIO(conteudo_excedente), "application/pdf")}
         
-        with patch("main.extrair_texto_pdf") as mock_extrair:
-            resp = client.post(endpoint, files=files, headers=headers)
+        with patch("main.get_db_connection") as mock_conn:
+            mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value.fetchone.return_value = (10,)
+            with patch("main.extrair_texto_pdf") as mock_extrair:
+                resp = client.post(endpoint, files=files, headers=headers)
             assert resp.status_code == 413
             assert "10 mb" in resp.json()["detail"].lower()
             mock_extrair.assert_not_called()
@@ -263,8 +265,10 @@ def test_upload_exame_assinatura_invalida(endpoint):
         conteudo_falso = b"ARQUIVO_TXT_DISFARCADO_DE_PDF"
         files = {"arquivo": ("teste.pdf", io.BytesIO(conteudo_falso), "application/pdf")}
         
-        with patch("main.extrair_texto_pdf") as mock_extrair:
-            resp = client.post(endpoint, files=files, headers=headers)
+        with patch("main.get_db_connection") as mock_conn:
+            mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value.fetchone.return_value = (10,)
+            with patch("main.extrair_texto_pdf") as mock_extrair:
+                resp = client.post(endpoint, files=files, headers=headers)
             assert resp.status_code == 415
             assert "não é um pdf válido" in resp.json()["detail"].lower()
             mock_extrair.assert_not_called()

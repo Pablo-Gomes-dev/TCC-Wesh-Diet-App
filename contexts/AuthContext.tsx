@@ -19,6 +19,8 @@ import React, {
     useState,
 } from "react";
 
+const AUTH_VALIDATION_TIMEOUT_MS = 8000;
+
 // TIPOS
 export type Usuario = {
   id: number;
@@ -71,10 +73,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const usuarioSalvo = await AsyncStorage.getItem("@wishdiet:usuario");
 
         if (tokenSalvo && usuarioSalvo) {
+          const usuarioLocal = JSON.parse(usuarioSalvo) as Usuario;
+          setToken(tokenSalvo);
+          setUsuario(usuarioLocal);
           // VALIDA O TOKEN COM O BACKEND (FONTE CONFIÁVEL DE AUTORIZAÇÃO)
-          const resposta = await fetch(`${API_BASE_URL}/auth/me`, {
-            headers: { Authorization: `Bearer ${tokenSalvo}` },
-          });
+          const controlador = new AbortController();
+          const temporizador = setTimeout(() => controlador.abort(), AUTH_VALIDATION_TIMEOUT_MS);
+          let resposta: Response;
+          try {
+            resposta = await fetch(`${API_BASE_URL}/auth/me`, {
+              headers: { Authorization: `Bearer ${tokenSalvo}` },
+              signal: controlador.signal,
+            });
+          } finally {
+            clearTimeout(temporizador);
+          }
 
           if (resposta.ok) {
             const dados = await resposta.json();
@@ -94,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch {
         // Sem conexão ou erro inesperado — limpa sessão por segurança
-        await limparSessaoLocal();
+        // A sessão local permanece disponível quando a falha é de rede ou timeout.
       } finally {
         setIsLoading(false);
       }

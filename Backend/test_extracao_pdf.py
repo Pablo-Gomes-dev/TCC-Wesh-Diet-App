@@ -11,6 +11,8 @@
 
 import io
 import time
+import pytest
+from unittest.mock import MagicMock, patch
 from pypdf import PdfWriter
 from extrator_pdf import extrair_texto_pdf, LIMITE_TAMANHO_BYTES
 
@@ -151,7 +153,7 @@ def test_extrair_texto_cabecalho_invalido():
 # ------------------------------------------------------------------------------
 # TESTE 7: INTEGRAÇÃO DO ENDPOINT POST /analisar-exame COM TESTCLIENT
 # ------------------------------------------------------------------------------
-def test_endpoint_analisar_exame_sucesso():
+def test_endpoint_analisar_exame_sucesso(tmp_path):
     from fastapi.testclient import TestClient
     from main import app
 
@@ -163,7 +165,15 @@ def test_endpoint_analisar_exame_sucesso():
         "arquivo": ("exame_glicose.pdf", pdf_bytes, "application/pdf")
     }
 
-    resposta = cliente.post("/analisar-exame", files=arquivos)
+    from auth import obter_usuario_atual
+    app.dependency_overrides[obter_usuario_atual] = lambda: {"id": 1, "tipo_usuario": "paciente", "ativo": True}
+    db = MagicMock()
+    db.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value.fetchone.side_effect = [(10,), (100,)]
+    try:
+        with patch("main.get_db_connection", db), patch("main.STORAGE_DIR", tmp_path):
+            resposta = cliente.post("/analisar-exame", files=arquivos)
+    finally:
+        app.dependency_overrides.pop(obter_usuario_atual, None)
 
     assert resposta.status_code == 200
     dados = resposta.json()
@@ -177,7 +187,7 @@ def test_endpoint_analisar_exame_sucesso():
 # ------------------------------------------------------------------------------
 # TESTE 8: INTEGRAÇÃO DO ALIAS DO ENDPOINT POST /analise-exame
 # ------------------------------------------------------------------------------
-def test_endpoint_alias_analise_exame():
+def test_endpoint_alias_analise_exame(tmp_path):
     from fastapi.testclient import TestClient
     from main import app
 
@@ -188,7 +198,15 @@ def test_endpoint_alias_analise_exame():
         "arquivo": ("exame_colesterol.pdf", pdf_bytes, "application/pdf")
     }
 
-    resposta = cliente.post("/analise-exame", files=arquivos)
+    from auth import obter_usuario_atual
+    app.dependency_overrides[obter_usuario_atual] = lambda: {"id": 1, "tipo_usuario": "paciente", "ativo": True}
+    db = MagicMock()
+    db.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value.fetchone.side_effect = [(10,), (101,)]
+    try:
+        with patch("main.get_db_connection", db), patch("main.STORAGE_DIR", tmp_path):
+            resposta = cliente.post("/analise-exame", files=arquivos)
+    finally:
+        app.dependency_overrides.pop(obter_usuario_atual, None)
 
     assert resposta.status_code == 200
     dados = resposta.json()
@@ -199,7 +217,7 @@ def test_endpoint_alias_analise_exame():
 # ------------------------------------------------------------------------------
 # TESTE 9: INTEGRAÇÃO DO ENDPOINT COM ARQUIVO CORROMPIDO (TRATAMENTO DE ERRO)
 # ------------------------------------------------------------------------------
-def test_endpoint_analisar_exame_corrompido():
+def test_endpoint_analisar_exame_corrompido(tmp_path):
     from fastapi.testclient import TestClient
     from main import app
 
@@ -210,7 +228,15 @@ def test_endpoint_analisar_exame_corrompido():
         "arquivo": ("exame_corrompido.pdf", bytes_corrompidos, "application/pdf")
     }
 
-    resposta = cliente.post("/analisar-exame", files=arquivos)
+    from auth import obter_usuario_atual
+    app.dependency_overrides[obter_usuario_atual] = lambda: {"id": 1, "tipo_usuario": "paciente", "ativo": True}
+    db = MagicMock()
+    db.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value.fetchone.return_value = (10,)
+    try:
+        with patch("main.get_db_connection", db), patch("main.STORAGE_DIR", tmp_path):
+            resposta = cliente.post("/analisar-exame", files=arquivos)
+    finally:
+        app.dependency_overrides.pop(obter_usuario_atual, None)
 
     # O servidor deve responder com status 200 e informar o erro sem quebrar
     assert resposta.status_code == 200

@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS planos_alimentares (
     atualizado_em TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     aprovado_por BIGINT REFERENCES usuarios(id) ON DELETE RESTRICT,
     aprovado_em TIMESTAMPTZ,
-    CONSTRAINT chk_plano_status CHECK (status IN ('rascunho', 'aprovado', 'arquivado')),
+    CONSTRAINT chk_plano_status CHECK (status IN ('rascunho', 'revisao_solicitada', 'aprovado', 'arquivado')),
     CONSTRAINT chk_plano_aprovacao_identificada
         CHECK (status <> 'aprovado' OR (aprovado_por IS NOT NULL AND aprovado_em IS NOT NULL))
 );

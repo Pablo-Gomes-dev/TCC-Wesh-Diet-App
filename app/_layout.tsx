@@ -104,6 +104,7 @@ function RootNavigation() {
 
       {/* GRUPO DE ABAS DO NUTRICIONISTA */}
       <Stack.Screen name="(nutricionista)" options={{ headerShown: false }} />
+      <Stack.Screen name="admin/taco" options={{ title: "Base TACO", headerShown: false }} />
       <Stack.Screen name="admin" options={{ title: "Administração", headerShown: false }} />
 
       {/* ROTAS PÚBLICAS DE AUTENTICAÇÃO */}

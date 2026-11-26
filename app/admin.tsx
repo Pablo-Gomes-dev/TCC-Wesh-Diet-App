@@ -44,6 +44,7 @@ export default function AdminScreen() {
     <View style={styles.header}><View><Text style={styles.eyebrow}>ADMINISTRAÇÃO</Text><Text style={styles.title}>Cadastros pendentes</Text></View>
       <Pressable onPress={() => signOut().then(() => router.replace("/login"))}><Text style={styles.logout}>Sair</Text></Pressable>
     </View>
+    <Pressable style={styles.tacoLink} onPress={() => router.push("/admin/taco")}><Text style={styles.tacoLinkText}>Base TACO — aprovar importações</Text></Pressable>
     {carregando ? <ActivityIndicator size="large" color="#2562EB" /> : <FlatList
       data={itens} keyExtractor={(item) => String(item.id)}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => carregar(true)} />}
@@ -59,5 +60,5 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F7FA", padding: 20, paddingTop: 58 },
   header: { flexDirection: "row", justifyContent: "space-between", marginBottom: 22 },
   eyebrow: { color: "#2562EB", fontSize: 12, fontWeight: "700" }, title: { color: "#1F2937", fontSize: 26, fontWeight: "800", marginTop: 4 }, logout: { color: "#DC2626", fontWeight: "700" },
-  empty: { textAlign: "center", color: "#6B7280", marginTop: 40 }, card: { backgroundColor: "#FFF", borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: "#E5E7EB" }, name: { color: "#111827", fontSize: 17, fontWeight: "700" }, detail: { color: "#6B7280", marginTop: 5 }, actions: { flexDirection: "row", gap: 10, marginTop: 16 }, button: { flex: 1, alignItems: "center", paddingVertical: 11, borderRadius: 9 }, reject: { backgroundColor: "#FEF2F2" }, approve: { backgroundColor: "#DCFCE7" }, rejectText: { color: "#B91C1C", fontWeight: "700" }, approveText: { color: "#15803D", fontWeight: "700" },
+  empty: { textAlign: "center", color: "#6B7280", marginTop: 40 }, tacoLink: { backgroundColor: "#E0F2FE", padding: 13, borderRadius: 9, marginBottom: 16 }, tacoLinkText: { color: "#1D4ED8", fontWeight: "700", textAlign: "center" }, card: { backgroundColor: "#FFF", borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: "#E5E7EB" }, name: { color: "#111827", fontSize: 17, fontWeight: "700" }, detail: { color: "#6B7280", marginTop: 5 }, actions: { flexDirection: "row", gap: 10, marginTop: 16 }, button: { flex: 1, alignItems: "center", paddingVertical: 11, borderRadius: 9 }, reject: { backgroundColor: "#FEF2F2" }, approve: { backgroundColor: "#DCFCE7" }, rejectText: { color: "#B91C1C", fontWeight: "700" }, approveText: { color: "#15803D", fontWeight: "700" },
 });

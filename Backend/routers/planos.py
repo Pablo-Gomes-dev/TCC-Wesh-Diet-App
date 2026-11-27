@@ -31,7 +31,11 @@ def validar_conteudo_plano(conteudo: PlanoAlimentar) -> None:
         raise HTTPException(status_code=422, detail="O plano deve permanecer marcado para revisão profissional.")
     if not conteudo.refeicoes:
         raise HTTPException(status_code=422, detail="O plano precisa conter ao menos uma refeição.")
-    if any(len(refeicao.substituicoes) != 2 for refeicao in conteudo.refeicoes):
+    if any(
+        len(refeicao.substituicoes) != 2
+        for refeicao in conteudo.refeicoes
+        if refeicao.nome.strip().casefold() not in {"cafe da manha", "cafÃ© da manhÃ£"}
+    ):
         raise HTTPException(status_code=422, detail="Cada refeição precisa conter exatamente duas substituições.")
 
 
@@ -90,7 +94,25 @@ def gerar_plano(dados: GerarPlanoRequest, usuario: dict = Depends(exigir_nutrici
                 catalogo = []
     consentimento.exigir_consentimento_ia(dados.paciente_id)
     entrada = {"paciente": {"objetivo": contexto["objetivo"], "restricoes": contexto["restricoes"], "observacoes": contexto["observacoes"], "dados_iniciais": contexto["dados_iniciais"]}, "ultima_evolucao": contexto["ultima_evolucao"], "catalogo_taco_aprovado": catalogo}
-    resultado = openai_service.gerar_estruturado(funcionalidade=openai_service.Funcionalidade.PLANO, instrucoes=prompts.INSTRUCOES_PLANO, dados=entrada, schema=PlanoAlimentar, usuario_id=usuario["id"], paciente_id=dados.paciente_id)
+    try:
+        resultado = openai_service.gerar_estruturado(funcionalidade=openai_service.Funcionalidade.PLANO, instrucoes=prompts.INSTRUCOES_PLANO, dados=entrada, schema=PlanoAlimentar, usuario_id=usuario["id"], paciente_id=dados.paciente_id)
+    except openai_service.IAIndisponivelError as erro:
+        if erro.codigo != "resposta_invalida":
+            raise
+        instrucoes_corretivas = prompts.INSTRUCOES_PLANO + (
+            " A tentativa anterior foi invalida. Gere novamente e confira antes de responder: "
+            "nao deixe refeicoes vazias, cada refeicao deve ter itens e exatamente duas substituicoes."
+        )
+        resultado = openai_service.gerar_estruturado(funcionalidade=openai_service.Funcionalidade.PLANO, instrucoes=instrucoes_corretivas, dados=entrada, schema=PlanoAlimentar, usuario_id=usuario["id"], paciente_id=dados.paciente_id)
+    try:
+        validar_conteudo_plano(resultado.dados)
+    except HTTPException:
+        instrucoes_corretivas = prompts.INSTRUCOES_PLANO + (
+            " A resposta anterior falhou na validacao de negocio. Gere novamente um plano completo: "
+            "pelo menos uma refeicao, itens em cada refeicao e exatamente duas substituicoes por refeicao."
+        )
+        resultado = openai_service.gerar_estruturado(funcionalidade=openai_service.Funcionalidade.PLANO, instrucoes=instrucoes_corretivas, dados=entrada, schema=PlanoAlimentar, usuario_id=usuario["id"], paciente_id=dados.paciente_id)
+        validar_conteudo_plano(resultado.dados)
     plano_json = resultado.dados.model_dump()
     with get_db_connection() as conn:
         with conn.cursor() as cur:

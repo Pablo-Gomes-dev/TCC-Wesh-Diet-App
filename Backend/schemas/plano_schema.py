@@ -31,3 +31,4 @@ class PlanoAlimentar(BaseModel):
     observacoes: List[str]
     restricoes_consideradas: List[str]
     requer_revisao_profissional: bool
+

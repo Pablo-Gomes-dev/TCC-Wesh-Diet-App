@@ -32,8 +32,10 @@ def test_plano_valido_exige_duas_substituicoes():
 
 
 def test_plano_rejeita_quantidade_diferente_de_duas_substituicoes():
+    dados = plano(1).model_dump()
+    dados["refeicoes"][0]["nome"] = "Almoco"
     with pytest.raises(HTTPException) as erro:
-        validar_conteudo_plano(plano(1))
+        validar_conteudo_plano(PlanoAlimentar.model_validate(dados))
     assert erro.value.status_code == 422
 
 

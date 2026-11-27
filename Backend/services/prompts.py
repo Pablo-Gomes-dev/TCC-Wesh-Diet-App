@@ -19,6 +19,9 @@ INSTRUCOES_EXAME = _REGRAS_COMUNS + (
 )
 
 INSTRUCOES_PLANO = _REGRAS_COMUNS + (
+    " Gere obrigatoriamente um plano completo com pelo menos quatro refeicoes concretas; nunca retorne "
+    "uma lista de refeicoes vazia. Para cada refeicao, informe nome, itens com alimento, quantidade e unidade, "
+    "e exatamente duas substituicoes completas, exceto no cafe da manha, que pode ter menos substituicoes. "
     " Tarefa: propor um plano alimentar diário em rascunho para revisão do nutricionista. "
     "Respeite rigorosamente objetivo, restrições e preferências informadas; nunca inclua alimentos "
     "que violem restrições, inclusive nas substituições. Use alimentos comuns no Brasil, quantidades "
